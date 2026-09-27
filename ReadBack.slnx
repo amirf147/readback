@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ReadBack.App/ReadBack.App.csproj" />
+    <Project Path="src/ReadBack.Core/ReadBack.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ReadBack.Tests/ReadBack.Tests.csproj" />
+  </Folder>
+</Solution>
