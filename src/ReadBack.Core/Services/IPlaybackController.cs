@@ -42,7 +42,7 @@ public interface IPlaybackController
     event EventHandler<PlaybackStateChangedEventArgs>? StateChanged;
     event EventHandler<ChunkChangedEventArgs>? ChunkChanged;
 
-    Task PlayTextAsync(string rawText, CancellationToken ct = default);
+    Task PlayTextAsync(string rawText, string? overrideVoice = null, string? overrideSpeed = null, CancellationToken ct = default);
     void Pause();
     void Resume();
     void TogglePause();

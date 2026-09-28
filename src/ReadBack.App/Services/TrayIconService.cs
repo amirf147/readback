@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,12 +25,14 @@ namespace ReadBack.App.Services;
 public class TrayIconService : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
+    private Icon? _loadedIcon;
     private readonly IPlaybackController _playback;
     private readonly ISettingsService _settingsService;
     private readonly IClipboardService _clipboardService;
     private readonly CompositeTTSEngine _ttsEngine;
     private readonly Themes.IHudThemeManager _themeManager;
     private readonly IStartupService _startupService;
+    private readonly Action? _showHudAction;
 
     public TrayIconService(
         IPlaybackController playback,
@@ -38,7 +40,8 @@ public class TrayIconService : IDisposable
         IClipboardService clipboardService,
         CompositeTTSEngine ttsEngine,
         Themes.IHudThemeManager themeManager,
-        IStartupService? startupService = null)
+        IStartupService? startupService = null,
+        Action? showHudAction = null)
     {
         _playback = playback;
         _settingsService = settingsService;
@@ -46,23 +49,44 @@ public class TrayIconService : IDisposable
         _ttsEngine = ttsEngine;
         _themeManager = themeManager;
         _startupService = startupService ?? new WindowsStartupService();
+        _showHudAction = showHudAction;
 
         _notifyIcon = new NotifyIcon();
         LoadIcon();
-        BuildContextMenu();
-
         _notifyIcon.Visible = true;
         _notifyIcon.Text = "ReadBack - Instant Clipboard Narrator";
-        _notifyIcon.DoubleClick += (s, e) => TriggerSpeakClipboard();
+        BuildContextMenu();
+
+        _notifyIcon.MouseUp += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                _showHudAction?.Invoke();
+            }
+        };
         _notifyIcon.Click += (s, e) =>
         {
-            if (e is MouseEventArgs me && me.Button == MouseButtons.Left)
+            if (e is not MouseEventArgs)
             {
-                TriggerSpeakClipboard();
+                _showHudAction?.Invoke();
             }
         };
 
         _playback.StateChanged += (s, e) => UpdateTooltip(e.NewState);
+    }
+
+    public void ShowReadyNotification()
+    {
+        try
+        {
+            _notifyIcon.ShowBalloonTip(
+                2500,
+                "ReadBack Active 🎙️",
+                "Running in system tray. Press Ctrl+Alt+C to speak clipboard.",
+                ToolTipIcon.Info
+            );
+        }
+        catch { }
     }
 
     public void CheckAndShowFirstRunPrompt()
@@ -95,12 +119,31 @@ public class TrayIconService : IDisposable
         string iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "icon.ico");
         if (File.Exists(iconPath))
         {
-            _notifyIcon.Icon = new Icon(iconPath);
+            try
+            {
+                _loadedIcon = new Icon(iconPath);
+                _notifyIcon.Icon = _loadedIcon;
+                return;
+            }
+            catch { }
         }
-        else
+
+        try
         {
-            _notifyIcon.Icon = SystemIcons.Application;
+            string? exe = Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
+            {
+                _loadedIcon = Icon.ExtractAssociatedIcon(exe);
+                if (_loadedIcon != null)
+                {
+                    _notifyIcon.Icon = _loadedIcon;
+                    return;
+                }
+            }
         }
+        catch { }
+
+        _notifyIcon.Icon = SystemIcons.Application;
     }
 
     private void UpdateTooltip(PlaybackState state)
@@ -115,7 +158,7 @@ public class TrayIconService : IDisposable
         _notifyIcon.Text = tooltip;
     }
 
-    public void TriggerSpeakClipboard()
+    public void TriggerSpeakClipboard(string? overrideVoice = null, string? overrideSpeed = null)
     {
         if (_playback.IsPlaying)
         {
@@ -135,7 +178,7 @@ public class TrayIconService : IDisposable
         string? text = _clipboardService.GetText();
         if (!string.IsNullOrWhiteSpace(text))
         {
-            _playback.PlayTextAsync(text);
+            _playback.PlayTextAsync(text, overrideVoice, overrideSpeed);
         }
         else
         {
@@ -163,31 +206,135 @@ public class TrayIconService : IDisposable
         var itemStop = new ToolStripMenuItem("Stop Narration\tCtrl+Alt+X", null, (s, e) => _playback.Stop());
         var itemNext = new ToolStripMenuItem("Next Paragraph\tCtrl+Alt+Right", null, (s, e) => _playback.NextChunk());
         var itemPrev = new ToolStripMenuItem("Previous Paragraph\tCtrl+Alt+Left", null, (s, e) => _playback.PreviousChunk());
+        var itemHud = new ToolStripMenuItem("Show Heads-Up Display\tCtrl+Alt+H", null, (s, e) => _showHudAction?.Invoke());
 
         menu.Items.Add(itemSpeak);
         menu.Items.Add(itemPause);
         menu.Items.Add(itemStop);
         menu.Items.Add(itemNext);
         menu.Items.Add(itemPrev);
+        menu.Items.Add(itemHud);
         menu.Items.Add(new ToolStripSeparator());
 
-        // 2. Voice Submenu
-        var voiceMenu = new ToolStripMenuItem("🗣️ Voice Selection");
+        // 2. Neural Voice Selection Submenu
+        var neuralMenu = new ToolStripMenuItem("🌐 Neural Voice Selection");
+        // 3. SAPI Voice Selection Submenu
+        var sapiMenu = new ToolStripMenuItem("🖥️ SAPI Voice Selection");
+
         try
         {
             var voices = await _ttsEngine.GetAvailableVoicesAsync();
 
             // Group: Natural Online Voices (Edge)
             var edgeVoices = voices.Where(v => v.IsNeural).ToList();
-            if (edgeVoices.Count > 0)
-            {
-                var edgeHeader = new ToolStripMenuItem("Natural Online Voices (Edge)") { Enabled = false };
-                voiceMenu.DropDownItems.Add(edgeHeader);
 
-                foreach (var v in edgeVoices)
+            // Filter to English neural voices or user's whitelist
+            List<VoiceInfo> filteredNeural;
+            if (currentSettings.NeuralVoiceWhitelist != null && currentSettings.NeuralVoiceWhitelist.Count > 0)
+            {
+                filteredNeural = edgeVoices.Where(v =>
+                    currentSettings.NeuralVoiceWhitelist.Any(w =>
+                        v.Id.Equals(w, StringComparison.OrdinalIgnoreCase) ||
+                        v.Id.Contains(w, StringComparison.OrdinalIgnoreCase) ||
+                        v.DisplayName.Contains(w, StringComparison.OrdinalIgnoreCase))
+                ).ToList();
+            }
+            else
+            {
+                filteredNeural = edgeVoices.Where(v =>
+                    v.Locale.StartsWith("en-", StringComparison.OrdinalIgnoreCase) ||
+                    v.Id.StartsWith("en-", StringComparison.OrdinalIgnoreCase)
+                ).ToList();
+            }
+
+            var priorityIds = new[]
+            {
+                "en-US-ChristopherNeural",
+                "en-US-GuyNeural",
+                "en-US-JennyNeural",
+                "en-US-AriaNeural",
+                "en-US-EricNeural",
+                "en-US-EmmaMultilingualNeural",
+                "en-GB-SoniaNeural",
+                "en-GB-RyanNeural"
+            };
+
+            var featured = filteredNeural
+                .Where(v => priorityIds.Any(p => p.Equals(v.Id, StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(v => Array.FindIndex(priorityIds, p => p.Equals(v.Id, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            var others = filteredNeural
+                .Where(v => !priorityIds.Any(p => p.Equals(v.Id, StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(v => v.DisplayName)
+                .ToList();
+
+            void AddNeuralVoiceItem(VoiceInfo v, ToolStripMenuItem targetMenu)
+            {
+                string label = v.Id switch
                 {
-                    string label = v.Id == "en-US-ChristopherNeural"
-                        ? $"⭐ {v.DisplayName} [Recommended]"
+                    "en-US-ChristopherNeural" => $"⭐ {v.DisplayName} [Recommended]",
+                    "en-US-GuyNeural" => $"⚡ {v.DisplayName} [Fast Reading / Articulated]",
+                    "en-US-JennyNeural" => $"⚡ {v.DisplayName} [Fast Reading]",
+                    _ => v.DisplayName
+                };
+
+                var vItem = new ToolStripMenuItem(label, null, (s, e) =>
+                {
+                    currentSettings.Voice = v.Id;
+                    if (currentSettings.OfflineOnly)
+                    {
+                        currentSettings.OfflineOnly = false;
+                    }
+                    _settingsService.Save();
+                    BuildContextMenu();
+                })
+                {
+                    Checked = !currentSettings.OfflineOnly && currentSettings.Voice.Equals(v.Id, StringComparison.OrdinalIgnoreCase)
+                };
+                targetMenu.DropDownItems.Add(vItem);
+            }
+
+            foreach (var v in featured)
+            {
+                AddNeuralVoiceItem(v, neuralMenu);
+            }
+
+            if (others.Count > 0)
+            {
+                if (featured.Count > 0)
+                    neuralMenu.DropDownItems.Add(new ToolStripSeparator());
+
+                if (currentSettings.NeuralVoiceWhitelist != null && currentSettings.NeuralVoiceWhitelist.Count > 0)
+                {
+                    foreach (var v in others)
+                    {
+                        AddNeuralVoiceItem(v, neuralMenu);
+                    }
+                }
+                else
+                {
+                    var moreMenu = new ToolStripMenuItem($"More English Voices ({others.Count})...");
+                    foreach (var v in others)
+                    {
+                        AddNeuralVoiceItem(v, moreMenu);
+                    }
+                    neuralMenu.DropDownItems.Add(moreMenu);
+                }
+            }
+
+            neuralMenu.DropDownItems.Add(new ToolStripSeparator());
+            var configVoicesItem = new ToolStripMenuItem("⚙️ Configure Voices in settings.json...", null, (s, e) => OpenConfigFile());
+            neuralMenu.DropDownItems.Add(configVoicesItem);
+
+            // Group: Installed Windows Offline Voices (SAPI)
+            var sapiVoices = voices.Where(v => v.IsOffline).ToList();
+            if (sapiVoices.Count > 0)
+            {
+                foreach (var v in sapiVoices)
+                {
+                    string label = v.DisplayName.Contains("David", StringComparison.OrdinalIgnoreCase)
+                        ? $"⚡ {v.DisplayName} [Turbo / High-Speed Clarity]"
                         : v.DisplayName;
 
                     var vItem = new ToolStripMenuItem(label, null, (s, e) =>
@@ -199,38 +346,11 @@ public class TrayIconService : IDisposable
                     {
                         Checked = currentSettings.Voice.Equals(v.Id, StringComparison.OrdinalIgnoreCase)
                     };
-                    voiceMenu.DropDownItems.Add(vItem);
+                    sapiMenu.DropDownItems.Add(vItem);
                 }
             }
 
-            // Group: Installed Windows Offline Voices (SAPI)
-            var sapiVoices = voices.Where(v => v.IsOffline).ToList();
-            if (sapiVoices.Count > 0)
-            {
-                if (edgeVoices.Count > 0)
-                    voiceMenu.DropDownItems.Add(new ToolStripSeparator());
-
-                var sapiHeader = new ToolStripMenuItem("Installed Windows Voices (Offline)") { Enabled = false };
-                voiceMenu.DropDownItems.Add(sapiHeader);
-
-                foreach (var v in sapiVoices)
-                {
-                    var vItem = new ToolStripMenuItem(v.DisplayName, null, (s, e) =>
-                    {
-                        currentSettings.Voice = v.Id;
-                        _settingsService.Save();
-                        BuildContextMenu();
-                    })
-                    {
-                        Checked = currentSettings.Voice.Equals(v.Id, StringComparison.OrdinalIgnoreCase)
-                    };
-                    voiceMenu.DropDownItems.Add(vItem);
-                }
-            }
-
-            voiceMenu.DropDownItems.Add(new ToolStripSeparator());
-
-            // Add shortcut to Windows Voice Settings for downloading more voices
+            sapiMenu.DropDownItems.Add(new ToolStripSeparator());
             var downloadVoicesItem = new ToolStripMenuItem("📥 Download More Windows Voices (Settings)...", null, (s, e) =>
             {
                 try
@@ -239,10 +359,11 @@ public class TrayIconService : IDisposable
                 }
                 catch { }
             });
-            voiceMenu.DropDownItems.Add(downloadVoicesItem);
+            sapiMenu.DropDownItems.Add(downloadVoicesItem);
         }
         catch { }
-        menu.Items.Add(voiceMenu);
+        menu.Items.Add(neuralMenu);
+        menu.Items.Add(sapiMenu);
 
         // 3. HUD Themes Submenu
         var themeSubMenu = new ToolStripMenuItem("🎨 HUD Theme");
@@ -262,8 +383,18 @@ public class TrayIconService : IDisposable
 
         // 4. Reading Speed Submenu
         var speedMenu = new ToolStripMenuItem("⚡ Reading Speed");
-        string[] speeds = { "-15%", "+0%", "+15%", "+25%", "+50%" };
-        string[] speedLabels = { "0.85x (Slower)", "1.0x (Normal)", "1.15x (Brisk)", "1.25x (Fast)", "1.5x (Super Fast)" };
+        string[] speeds = { "-15%", "+0%", "+15%", "+25%", "+50%", "+75%", "+100%", "+150%", "+200%" };
+        string[] speedLabels = {
+            "0.85x (Slower)",
+            "1.0x (Normal)",
+            "1.15x (Brisk)",
+            "1.25x (Fast)",
+            "1.5x (Very Fast)",
+            "1.75x (Rapid)",
+            "2.0x (⚡ Turbo - 2x)",
+            "2.5x (⚡ Super Turbo - 2.5x)",
+            "3.0x (⚡ Extreme Limit - 3x)"
+        };
 
         for (int i = 0; i < speeds.Length; i++)
         {
@@ -337,6 +468,21 @@ public class TrayIconService : IDisposable
         var offlineItem = new ToolStripMenuItem("Offline Only (Windows SAPI)", null, (s, e) =>
         {
             currentSettings.OfflineOnly = !currentSettings.OfflineOnly;
+            if (currentSettings.OfflineOnly)
+            {
+                if (!currentSettings.Voice.StartsWith("sapi:", StringComparison.OrdinalIgnoreCase) &&
+                    !currentSettings.Voice.StartsWith("Windows:", StringComparison.OrdinalIgnoreCase))
+                {
+                    currentSettings.Voice = "sapi:Microsoft David Desktop";
+                }
+            }
+            else
+            {
+                if (currentSettings.Voice.StartsWith("sapi:", StringComparison.OrdinalIgnoreCase))
+                {
+                    currentSettings.Voice = "en-US-ChristopherNeural";
+                }
+            }
             _settingsService.Save();
             BuildContextMenu();
         })
@@ -346,7 +492,7 @@ public class TrayIconService : IDisposable
         menu.Items.Add(offlineItem);
         menu.Items.Add(new ToolStripSeparator());
 
-        // 9. User Guide & Documentation
+        // 9. User Guide & Settings Configuration
         var guideItem = new ToolStripMenuItem("📖 User Guide & Help...", null, (s, e) =>
         {
             try
@@ -364,6 +510,9 @@ public class TrayIconService : IDisposable
             catch { }
         });
         menu.Items.Add(guideItem);
+
+        var settingsFileItem = new ToolStripMenuItem("⚙️ Open Settings Configuration (settings.json)...", null, (s, e) => OpenConfigFile());
+        menu.Items.Add(settingsFileItem);
         menu.Items.Add(new ToolStripSeparator());
 
         // 10. Exit
@@ -378,9 +527,41 @@ public class TrayIconService : IDisposable
         _notifyIcon.ContextMenuStrip = menu;
     }
 
+    private void ShowContextMenu()
+    {
+        try
+        {
+            var method = typeof(NotifyIcon).GetMethod("ShowContextMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            if (method != null)
+            {
+                method.Invoke(_notifyIcon, null);
+                return;
+            }
+        }
+        catch { }
+
+        _notifyIcon.ContextMenuStrip?.Show(Cursor.Position);
+    }
+
+    private void OpenConfigFile()
+    {
+        try
+        {
+            string settingsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ReadBack");
+            string settingsPath = Path.Combine(settingsDir, "settings.json");
+            if (!File.Exists(settingsPath))
+            {
+                _settingsService.Save();
+            }
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(settingsPath) { UseShellExecute = true });
+        }
+        catch { }
+    }
+
     public void Dispose()
     {
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _loadedIcon?.Dispose();
     }
 }

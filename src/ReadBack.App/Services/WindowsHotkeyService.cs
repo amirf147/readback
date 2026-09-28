@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -41,6 +41,7 @@ public class WindowsHotkeyService : IHotkeyService
     private const int VK_SPACE = 0x20;
     private const int VK_RIGHT = 0x27;
     private const int VK_LEFT = 0x25;
+    private const int VK_H = 0x48;
     private const int VK_ESCAPE = 0x1B;
     private const int VK_CONTROL = 0x11;
     private const int VK_MENU = 0x12; // Alt key
@@ -50,12 +51,15 @@ public class WindowsHotkeyService : IHotkeyService
     private const int HOTKEY_ID_PAUSE = 9003;
     private const int HOTKEY_ID_NEXT = 9004;
     private const int HOTKEY_ID_PREV = 9005;
+    private const int HOTKEY_ID_HUD = 9006;
 
     public event Action? SpeakRequested;
     public event Action? StopRequested;
     public event Action? PauseRequested;
     public event Action? NextRequested;
     public event Action? PrevRequested;
+    public event Action? HudRequested;
+    public event Action? EscapeRequested;
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -90,6 +94,8 @@ public class WindowsHotkeyService : IHotkeyService
     private DateTime _lastPauseTime = DateTime.MinValue;
     private DateTime _lastNextTime = DateTime.MinValue;
     private DateTime _lastPrevTime = DateTime.MinValue;
+    private DateTime _lastHudTime = DateTime.MinValue;
+    private DateTime _lastEscapeTime = DateTime.MinValue;
 
     public WindowsHotkeyService(ISettingsService settingsService)
     {
@@ -146,11 +152,14 @@ public class WindowsHotkeyService : IHotkeyService
                     case VK_LEFT:
                         TriggerPrev();
                         break;
+                    case VK_H:
+                        TriggerHud();
+                        break;
                 }
             }
             else if (vkCode == VK_ESCAPE)
             {
-                TriggerStop();
+                TriggerEscape();
             }
         }
 
@@ -167,6 +176,7 @@ public class WindowsHotkeyService : IHotkeyService
         RegisterHotKey(_hwnd, HOTKEY_ID_PAUSE, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_SPACE);
         RegisterHotKey(_hwnd, HOTKEY_ID_NEXT, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_RIGHT);
         RegisterHotKey(_hwnd, HOTKEY_ID_PREV, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_LEFT);
+        RegisterHotKey(_hwnd, HOTKEY_ID_HUD, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_H);
     }
 
     public void UnregisterHotkeys()
@@ -177,6 +187,7 @@ public class WindowsHotkeyService : IHotkeyService
         UnregisterHotKey(_hwnd, HOTKEY_ID_PAUSE);
         UnregisterHotKey(_hwnd, HOTKEY_ID_NEXT);
         UnregisterHotKey(_hwnd, HOTKEY_ID_PREV);
+        UnregisterHotKey(_hwnd, HOTKEY_ID_HUD);
     }
 
     private nint HwndHook(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
@@ -204,6 +215,10 @@ public class WindowsHotkeyService : IHotkeyService
                     break;
                 case HOTKEY_ID_PREV:
                     TriggerPrev();
+                    handled = true;
+                    break;
+                case HOTKEY_ID_HUD:
+                    TriggerHud();
                     handled = true;
                     break;
             }
@@ -244,6 +259,20 @@ public class WindowsHotkeyService : IHotkeyService
         if ((DateTime.UtcNow - _lastPrevTime).TotalMilliseconds < 350) return;
         _lastPrevTime = DateTime.UtcNow;
         PrevRequested?.Invoke();
+    }
+
+    private void TriggerHud()
+    {
+        if ((DateTime.UtcNow - _lastHudTime).TotalMilliseconds < 350) return;
+        _lastHudTime = DateTime.UtcNow;
+        HudRequested?.Invoke();
+    }
+
+    private void TriggerEscape()
+    {
+        if ((DateTime.UtcNow - _lastEscapeTime).TotalMilliseconds < 300) return;
+        _lastEscapeTime = DateTime.UtcNow;
+        EscapeRequested?.Invoke();
     }
 
     public void Dispose()

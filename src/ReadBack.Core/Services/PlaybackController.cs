@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -89,7 +89,7 @@ public class PlaybackController : IPlaybackController
         Directory.CreateDirectory(_cacheDir);
     }
 
-    public async Task PlayTextAsync(string rawText, CancellationToken ct = default)
+    public async Task PlayTextAsync(string rawText, string? overrideVoice = null, string? overrideSpeed = null, CancellationToken ct = default)
     {
         Stop();
 
@@ -114,23 +114,31 @@ public class PlaybackController : IPlaybackController
         State = PlaybackState.Playing;
         _currentIndex = 0;
 
+        string voice = overrideVoice ?? _settingsService.CurrentSettings.Voice;
+        if (overrideVoice == null && _settingsService.CurrentSettings.OfflineOnly &&
+            !voice.StartsWith("sapi:", StringComparison.OrdinalIgnoreCase) &&
+            !voice.StartsWith("Windows:", StringComparison.OrdinalIgnoreCase))
+        {
+            voice = "sapi:Microsoft David Desktop";
+        }
+        string speed = overrideSpeed ?? _settingsService.CurrentSettings.Speed;
+
         // Start background prefetch synthesis for all chunks
-        _ = Task.Run(() => SynthesizeRemainingChunksAsync(_chunks, activeToken), activeToken);
+        _ = Task.Run(() => SynthesizeRemainingChunksAsync(_chunks, voice, speed, activeToken), activeToken);
 
         // Start sequential playback loop
         _ = Task.Run(() => PlaybackLoopAsync(activeToken), activeToken);
     }
 
-    private async Task SynthesizeRemainingChunksAsync(List<SpeechChunk> chunks, CancellationToken ct)
+    private async Task SynthesizeRemainingChunksAsync(List<SpeechChunk> chunks, string voice, string speed, CancellationToken ct)
     {
-        var settings = _settingsService.CurrentSettings;
         for (int i = 0; i < chunks.Count && !ct.IsCancellationRequested; i++)
         {
             var chunk = chunks[i];
             if (chunk.IsSynthesized) continue;
 
             string filePath = Path.Combine(_cacheDir, $"chunk_{i}_{Guid.NewGuid():N}.mp3");
-            bool success = await _ttsEngine.SynthesizeToFileAsync(chunk.Text, filePath, settings.Voice, settings.Speed, ct);
+            bool success = await _ttsEngine.SynthesizeToFileAsync(chunk.Text, filePath, voice, speed, ct);
             if (success)
             {
                 chunk.AudioFilePath = filePath;

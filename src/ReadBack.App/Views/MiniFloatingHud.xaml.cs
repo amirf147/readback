@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -35,6 +35,22 @@ public partial class MiniFloatingHud : Window
 
         _waveAnimation = TryFindResource("WavePulseAnimation") as Storyboard;
 
+        KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                if (_viewModel.IsPlaying)
+                {
+                    _viewModel.StopCommand.Execute(null);
+                }
+                else
+                {
+                    _viewModel.IsVisible = false;
+                }
+                e.Handled = true;
+            }
+        };
+
         _viewModel.PropertyChanged += (s, e) =>
         {
             if (e.PropertyName == nameof(HudViewModel.IsVisible))
@@ -45,6 +61,7 @@ public partial class MiniFloatingHud : Window
                     {
                         PositionTopCenter();
                         Show();
+                        Activate();
                         ApplyDwmBackdrop();
                     }
                     else
@@ -78,11 +95,7 @@ public partial class MiniFloatingHud : Window
 
     private void ApplyDwmBackdrop()
     {
-        // MiniFloatingHud is a per-pixel alpha transparent layered window (AllowsTransparency="True").
-        // Calling DwmSetWindowAttribute with DWMWA_SYSTEMBACKDROP_TYPE causes DWM to draw an opaque/frosted
-        // rectangular backdrop sheet over the entire window bounding box (including the outer shadow margins),
-        // resulting in an unsightly rectangular frosted box behind the rounded capsule.
-        // Instead, the capsule border's translucent gradient, specular border, and WPF drop shadow render
+        // Translucent gradient, specular border, and WPF drop shadow render
         // the clean, cohesive pill with 100% transparent surroundings.
     }
 

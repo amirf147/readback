@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,4 +26,6 @@ public interface IHotkeyService : IDisposable
     event Action? PauseRequested;
     event Action? NextRequested;
     event Action? PrevRequested;
+    event Action? HudRequested;
+    event Action? EscapeRequested;
 }

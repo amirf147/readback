@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,10 +27,17 @@ public class AppSettings
     public bool LaunchAtStartup { get; set; } = false;
     public bool FirstRunPromptShown { get; set; } = false;
 
+    /// <summary>
+    /// Optional whitelist of neural voice IDs or names to display in the menu.
+    /// If empty, defaults to showing all English neural voices.
+    /// </summary>
+    public List<string> NeuralVoiceWhitelist { get; set; } = new();
+
     // Hotkey configurations
     public string HotkeySpeak { get; set; } = "ctrl+alt+c";
     public string HotkeyStop { get; set; } = "ctrl+alt+x";
     public string HotkeyPause { get; set; } = "ctrl+alt+space";
     public string HotkeyNext { get; set; } = "ctrl+alt+right";
     public string HotkeyPrev { get; set; } = "ctrl+alt+left";
+    public string HotkeyHud { get; set; } = "ctrl+alt+h";
 }

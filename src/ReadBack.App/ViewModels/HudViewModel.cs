@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ public class HudViewModel : INotifyPropertyChanged
     private readonly ISettingsService _settings;
     private readonly Themes.IHudThemeManager _themeManager;
 
-    private string _statusText = "Idle";
+    private string _statusText = "Ready";
     private string _chunkProgress = "";
     private string _snippetText = "";
     private bool _isVisible = false;
@@ -90,7 +90,11 @@ public class HudViewModel : INotifyPropertyChanged
         StopCommand = new RelayCommand(() => _playback.Stop());
         NextCommand = new RelayCommand(() => _playback.NextChunk());
         PrevCommand = new RelayCommand(() => _playback.PreviousChunk());
-        CloseCommand = new RelayCommand(() => IsVisible = false);
+        CloseCommand = new RelayCommand(() =>
+        {
+            _playback.Stop();
+            IsVisible = false;
+        });
 
         _playback.StateChanged += OnPlaybackStateChanged;
         _playback.ChunkChanged += OnChunkChanged;
@@ -122,11 +126,12 @@ public class HudViewModel : INotifyPropertyChanged
                     StatusText = "Paused";
                     break;
                 case PlaybackState.Stopped:
+                    StatusText = "Stopped";
+                    // Do not close down display! Retain snippet and keep HUD visible.
+                    break;
                 case PlaybackState.Idle:
-                    StatusText = "Idle";
-                    ChunkProgress = "";
-                    SnippetText = "";
-                    IsVisible = false;
+                    StatusText = "Finished";
+                    // Do not close down display! Retain snippet and keep HUD visible.
                     break;
             }
         });
