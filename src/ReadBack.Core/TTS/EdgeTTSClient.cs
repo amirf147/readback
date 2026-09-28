@@ -1,3 +1,18 @@
+﻿// Copyright 2026 ReadBack Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 using System.Net.WebSockets;
 using System.Security;
 using System.Text;
@@ -13,24 +28,81 @@ public class EdgeTTSClient : ITTSEngine
 {
     public string Name => "Microsoft Edge Neural TTS";
 
-    private const string WssEndpoint = "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EA654972831454495D3D15D6";
+    private const string TrustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+    private const string SecMsGecVersion = "1-143.0.3650.75";
     private const string Origin = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
-    private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0";
+    private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
+    private const string VoiceListUrl = $"https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken={TrustedClientToken}";
+
+    private static readonly HttpClient _httpClient = new();
 
     public static readonly IReadOnlyList<VoiceInfo> PopularVoices = new List<VoiceInfo>
     {
-        new("en-US-JennyNeural", "Jenny (US Natural Female)", "en-US", true, false),
-        new("en-US-GuyNeural", "Guy (US Natural Male)", "en-US", true, false),
-        new("en-US-AriaNeural", "Aria (US Expressive Female)", "en-US", true, false),
-        new("en-US-ChristopherNeural", "Christopher (US Storyteller Male)", "en-US", true, false),
-        new("en-US-EricNeural", "Eric (US Friendly Male)", "en-US", true, false),
-        new("en-GB-SoniaNeural", "Sonia (UK Natural Female)", "en-GB", true, false),
-        new("en-GB-RyanNeural", "Ryan (UK Natural Male)", "en-GB", true, false),
+        new("en-US-ChristopherNeural", "Microsoft Christopher Online (Natural) - English (United States)", "en-US", true, false),
+        new("en-US-JennyNeural", "Microsoft Jenny Online (Natural) - English (United States)", "en-US", true, false),
+        new("en-US-GuyNeural", "Microsoft Guy Online (Natural) - English (United States)", "en-US", true, false),
+        new("en-US-AriaNeural", "Microsoft Aria Online (Natural) - English (United States)", "en-US", true, false),
+        new("en-US-EricNeural", "Microsoft Eric Online (Natural) - English (United States)", "en-US", true, false),
+        new("en-US-EmmaMultilingualNeural", "Microsoft Emma Online (Natural) - English (United States)", "en-US", true, false),
+        new("en-GB-SoniaNeural", "Microsoft Sonia Online (Natural) - English (United Kingdom)", "en-GB", true, false),
+        new("en-GB-RyanNeural", "Microsoft Ryan Online (Natural) - English (United Kingdom)", "en-GB", true, false),
     };
 
-    public Task<IReadOnlyList<VoiceInfo>> GetAvailableVoicesAsync(CancellationToken ct = default)
+    private static IReadOnlyList<VoiceInfo>? _cachedVoices;
+
+    public async Task<IReadOnlyList<VoiceInfo>> GetAvailableVoicesAsync(CancellationToken ct = default)
     {
-        return Task.FromResult(PopularVoices);
+        if (_cachedVoices != null && _cachedVoices.Count > 0)
+            return _cachedVoices;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, VoiceListUrl);
+            req.Headers.Add("User-Agent", UserAgent);
+            var resp = await _httpClient.SendAsync(req, ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = await resp.Content.ReadAsStringAsync(ct);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                var list = new List<VoiceInfo>();
+                foreach (var element in doc.RootElement.EnumerateArray())
+                {
+                    string shortName = element.GetProperty("ShortName").GetString() ?? "";
+                    string friendlyName = element.TryGetProperty("FriendlyName", out var fn) ? (fn.GetString() ?? shortName) : shortName;
+                    string locale = element.TryGetProperty("Locale", out var loc) ? (loc.GetString() ?? "en-US") : "en-US";
+                    if (!string.IsNullOrEmpty(shortName))
+                    {
+                        list.Add(new VoiceInfo(shortName, friendlyName, locale, true, false));
+                    }
+                }
+
+                if (list.Count > 0)
+                {
+                    _cachedVoices = list;
+                    return list;
+                }
+            }
+        }
+        catch
+        {
+            // Fall back to PopularVoices if offline or fetch fails
+        }
+
+        return PopularVoices;
+    }
+
+    private static string GenerateSecMsGec()
+    {
+        // Switch to Windows file time epoch (1601-01-01 00:00:00 UTC) = 11644473600 seconds
+        double unixSec = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+        double ticks = unixSec + 11644473600.0;
+        // Round down to the nearest 5 minutes (300 seconds)
+        ticks -= ticks % 300;
+        // Convert to 100-nanosecond intervals
+        ticks *= 10000000.0;
+        string strToHash = $"{ticks:0}{TrustedClientToken}";
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(strToHash));
+        return Convert.ToHexString(hash);
     }
 
     public async Task<bool> SynthesizeToFileAsync(string text, string outputPath, string voiceId, string rate, CancellationToken ct = default)
@@ -43,13 +115,18 @@ public class EdgeTTSClient : ITTSEngine
         ws.Options.SetRequestHeader("User-Agent", UserAgent);
         ws.Options.SetRequestHeader("Pragma", "no-cache");
         ws.Options.SetRequestHeader("Cache-Control", "no-cache");
+        ws.Options.SetRequestHeader("Cookie", $"muid={Guid.NewGuid():N};");
 
         try
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(12));
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
 
-            await ws.ConnectAsync(new Uri(WssEndpoint), timeoutCts.Token);
+            string secMsGec = GenerateSecMsGec();
+            string connId = Guid.NewGuid().ToString("N");
+            string wsUrl = $"wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken={TrustedClientToken}&Sec-MS-GEC={secMsGec}&Sec-MS-GEC-Version={SecMsGecVersion}&ConnectionId={connId}";
+
+            await ws.ConnectAsync(new Uri(wsUrl), timeoutCts.Token);
 
             // 1. Send speech.config message
             string configMsg = "Content-Type:application/json;charset=utf-8\r\nPath:speech.config\r\n\r\n{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"true\"},\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}";
@@ -105,8 +182,9 @@ public class EdgeTTSClient : ITTSEngine
             File.Move(tempPath, outputPath);
             return new FileInfo(outputPath).Length > 0;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.Error.WriteLine($"[EdgeTTS ERROR] {ex}");
             if (File.Exists(outputPath + ".tmp"))
             {
                 try { File.Delete(outputPath + ".tmp"); } catch { }

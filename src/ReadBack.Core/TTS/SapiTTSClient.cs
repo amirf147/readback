@@ -1,3 +1,18 @@
+﻿// Copyright 2026 ReadBack Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 using System.Speech.Synthesis;
 using AppVoiceInfo = ReadBack.Core.Models.VoiceInfo;
 
@@ -19,13 +34,17 @@ public class SapiTTSClient : ITTSEngine
             using var synth = new SpeechSynthesizer();
             foreach (var voice in synth.GetInstalledVoices())
             {
-                list.Add(new AppVoiceInfo(
-                    voice.VoiceInfo.Name,
-                    $"Windows: {voice.VoiceInfo.Name}",
-                    voice.VoiceInfo.Culture.Name,
-                    false,
-                    true
-                ));
+                if (voice.Enabled)
+                {
+                    list.Add(new AppVoiceInfo(
+                        $"sapi:{voice.VoiceInfo.Name}",
+                        $"{voice.VoiceInfo.Name} (Windows Offline)",
+                        voice.VoiceInfo.Culture.Name,
+                        false,
+                        true,
+                        "Windows (Offline)"
+                    ));
+                }
             }
         }
         catch { }
@@ -40,9 +59,10 @@ public class SapiTTSClient : ITTSEngine
         try
         {
             using var synth = new SpeechSynthesizer();
-            if (!string.IsNullOrEmpty(voiceId))
+            string cleanVoice = (voiceId ?? "").Replace("sapi:", "").Replace("Windows: ", "").Trim();
+            if (!string.IsNullOrEmpty(cleanVoice))
             {
-                try { synth.SelectVoice(voiceId); } catch { }
+                try { synth.SelectVoice(cleanVoice); } catch { }
             }
 
             synth.Rate = ParseSapiRate(rate);

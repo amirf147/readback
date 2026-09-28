@@ -1,4 +1,4 @@
-﻿// Copyright 2026 ReadBack Contributors
+// Copyright 2026 ReadBack Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,32 +13,22 @@
 // limitations under the License.
 //
 // SPDX-License-Identifier: Apache-2.0
-using ReadBack.Core.Models;
 
-namespace ReadBack.Core.Filters;
+namespace ReadBack.App.Services;
 
 /// <summary>
-/// Defines an extensible filter in the text narration pipeline.
+/// Service interface to manage application automatic startup at Windows user login.
 /// </summary>
-public interface INarrationFilter
+public interface IStartupService
 {
     /// <summary>
-    /// Unique display name for this filter.
+    /// Checks whether the application is registered to start automatically on Windows login.
     /// </summary>
-    string Name { get; }
+    bool IsStartupEnabled();
 
     /// <summary>
-    /// Execution order in the pipeline. Lower runs earlier.
+    /// Enables or disables automatic startup on Windows login via the current user's registry.
     /// </summary>
-    int Order { get; }
-
-    /// <summary>
-    /// Whether this filter is currently active.
-    /// </summary>
-    bool IsEnabled { get; set; }
-
-    /// <summary>
-    /// Transforms or cleans the given text prior to speech synthesis.
-    /// </summary>
-    string Process(string text, FilterContext context);
+    /// <param name="enable">True to launch at startup, false otherwise.</param>
+    void SetStartup(bool enable);
 }

@@ -1,3 +1,20 @@
+﻿<!--
+Copyright 2026 ReadBack Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+SPDX-License-Identifier: Apache-2.0
+-->
 <Window x:Class="ReadBack.App.Views.MiniFloatingHud"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -13,24 +30,25 @@
         ShowInTaskbar="False"
         ResizeMode="NoResize"
         SizeToContent="WidthAndHeight"
+        FontFamily="Segoe UI Variable Display, Segoe UI, -apple-system, sans-serif"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
 
     <Window.Resources>
-        <!-- Modern Pill Action Button Style -->
-        <Style x:Key="PillButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#252528"/>
-            <Setter Property="Foreground" Value="#E0E0E0"/>
+        <!-- Modern Windows 11 Glass Button Style -->
+        <Style x:Key="ModernGlassButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{Binding CurrentTheme.ButtonBackground}"/>
+            <Setter Property="Foreground" Value="{Binding CurrentTheme.ButtonForeground}"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Padding" Value="7,4"/>
             <Setter Property="Margin" Value="2,0"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI, sans-serif"/>
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="border"
-                                CornerRadius="12"
+                                CornerRadius="10"
                                 Background="{TemplateBinding Background}"
                                 Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
@@ -38,67 +56,124 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#38383D"/>
+                                <Setter TargetName="border" Property="Background" Value="{Binding CurrentTheme.ButtonHoverBackground}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#0078D4"/>
-                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                <Setter TargetName="border" Property="Background" Value="{Binding CurrentTheme.ButtonPressedBackground}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Waveform pulse animation -->
+        <Storyboard x:Key="WavePulseAnimation" RepeatBehavior="Forever">
+            <DoubleAnimation Storyboard.TargetName="WaveBar1" Storyboard.TargetProperty="Height"
+                             From="6" To="14" Duration="0:0:0.4" AutoReverse="True"/>
+            <DoubleAnimation Storyboard.TargetName="WaveBar2" Storyboard.TargetProperty="Height"
+                             From="14" To="6" Duration="0:0:0.35" AutoReverse="True"/>
+            <DoubleAnimation Storyboard.TargetName="WaveBar3" Storyboard.TargetProperty="Height"
+                             From="8" To="16" Duration="0:0:0.45" AutoReverse="True"/>
+        </Storyboard>
     </Window.Resources>
 
     <!-- Floating capsule container inspired by Windows 11 Dictation (Win+H) toolbar -->
-    <Border CornerRadius="22"
-            Background="#E618181B"
-            BorderBrush="#3B82F6"
-            BorderThickness="1.5"
-            Margin="10"
-            Padding="12,7"
+    <Border CornerRadius="{Binding CurrentTheme.CornerRadius}"
+            Background="{Binding CurrentTheme.BackgroundBrush}"
+            BorderBrush="{Binding CurrentTheme.BorderBrush}"
+            BorderThickness="{Binding CurrentTheme.BorderThickness}"
+            Effect="{Binding CurrentTheme.WindowEffect}"
+            Margin="12"
+            Padding="14,8"
             SnapsToDevicePixels="True">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="18" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.55"/>
-        </Border.Effect>
 
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
 
-            <!-- Active Wave / Mic Badge -->
-            <Border Width="30" Height="30" CornerRadius="15" Background="#1D4ED8" Margin="0,0,10,0">
-                <TextBlock Text="🎙️" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <!-- Drag Affordance Grip -->
+            <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.4" ToolTip="Drag to move">
+                <Border Width="3" Height="3" CornerRadius="1.5" Background="{Binding CurrentTheme.TextForeground}" Margin="0,1"/>
+                <Border Width="3" Height="3" CornerRadius="1.5" Background="{Binding CurrentTheme.TextForeground}" Margin="0,1"/>
+                <Border Width="3" Height="3" CornerRadius="1.5" Background="{Binding CurrentTheme.TextForeground}" Margin="0,1"/>
+            </StackPanel>
+
+            <!-- Active Waveform / Mic Capsule -->
+            <Border Width="32" Height="32" CornerRadius="16" Margin="0,0,10,0">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#2563EB" Offset="0.0"/>
+                        <GradientStop Color="#0284C7" Offset="1.0"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- Mic icon when idle / paused -->
+                    <TextBlock Text="🎙️" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPlaying}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <!-- Animated 3-bar Soundwave when playing -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsPlaying}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <Border x:Name="WaveBar1" Width="3" Height="10" CornerRadius="1.5" Background="#FFFFFF" Margin="1,0"/>
+                        <Border x:Name="WaveBar2" Width="3" Height="14" CornerRadius="1.5" Background="#FFFFFF" Margin="1,0"/>
+                        <Border x:Name="WaveBar3" Width="3" Height="8" CornerRadius="1.5" Background="#FFFFFF" Margin="1,0"/>
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <!-- Brand & Progress Pill -->
-            <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,12,0">
-                <StackPanel Orientation="Horizontal">
+            <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="0,0,14,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="ReadBack"
                                FontWeight="SemiBold"
                                FontSize="11"
-                               Foreground="#60A5FA"
-                               Margin="0,0,6,0"/>
-                    <Border Background="#27272A" CornerRadius="8" Padding="5,1">
+                               Foreground="{Binding CurrentTheme.TitleForeground}"
+                               Margin="0,0,8,0"/>
+                    <Border Background="{Binding CurrentTheme.BadgeBackground}"
+                            CornerRadius="8"
+                            Padding="6,1"
+                            VerticalAlignment="Center">
                         <TextBlock Text="{Binding ChunkProgress}"
                                    FontWeight="Bold"
                                    FontSize="10"
-                                   Foreground="#F4F4F5"/>
+                                   Foreground="{Binding CurrentTheme.BadgeForeground}"/>
                     </Border>
                 </StackPanel>
 
                 <!-- Current text snippet preview -->
                 <TextBlock Text="{Binding SnippetText}"
                            FontSize="12"
-                           Foreground="#D4D4D8"
-                           MaxWidth="280"
+                           Foreground="{Binding CurrentTheme.TextForeground}"
+                           MaxWidth="300"
                            TextTrimming="CharacterEllipsis"
                            Margin="0,2,0,0"/>
             </StackPanel>
 
-            <!-- Control Buttons (Prev, Play/Pause, Next, Stop) -->
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0">
+            <!-- Controls (Prev, Play/Pause, Next, Stop, Hide) -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="2,0,0,0">
                 <!-- Previous Chunk -->
-                <Button Style="{StaticResource PillButtonStyle}"
+                <Button Style="{StaticResource ModernGlassButtonStyle}"
                         Command="{Binding PrevCommand}"
                         ToolTip="Previous Paragraph (Ctrl+Alt+Left)"
                         Width="30" Height="28">
@@ -106,11 +181,11 @@
                 </Button>
 
                 <!-- Play / Pause -->
-                <Button Style="{StaticResource PillButtonStyle}"
+                <Button Style="{StaticResource ModernGlassButtonStyle}"
                         Command="{Binding PlayPauseCommand}"
                         ToolTip="Pause / Resume (Ctrl+Alt+Space)"
                         Width="32" Height="28">
-                    <TextBlock Text="{Binding IsPlaying, Converter={x:Null}}" FontSize="11">
+                    <TextBlock FontSize="11">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Text" Value="⏸"/>
@@ -125,7 +200,7 @@
                 </Button>
 
                 <!-- Next Chunk -->
-                <Button Style="{StaticResource PillButtonStyle}"
+                <Button Style="{StaticResource ModernGlassButtonStyle}"
                         Command="{Binding NextCommand}"
                         ToolTip="Next Paragraph (Ctrl+Alt+Right)"
                         Width="30" Height="28">
@@ -133,7 +208,7 @@
                 </Button>
 
                 <!-- Stop -->
-                <Button Style="{StaticResource PillButtonStyle}"
+                <Button Style="{StaticResource ModernGlassButtonStyle}"
                         Command="{Binding StopCommand}"
                         ToolTip="Stop Narration (Ctrl+Alt+X or Esc)"
                         Width="30" Height="28">
@@ -141,11 +216,11 @@
                 </Button>
 
                 <!-- Close / Hide -->
-                <Button Style="{StaticResource PillButtonStyle}"
+                <Button Style="{StaticResource ModernGlassButtonStyle}"
                         Command="{Binding CloseCommand}"
-                        ToolTip="Hide HUD"
+                        ToolTip="Hide Floating HUD"
                         Width="26" Height="28" Margin="4,0,0,0">
-                    <TextBlock Text="✕" FontSize="10" Foreground="#A1A1AA"/>
+                    <TextBlock Text="✕" FontSize="10" Opacity="0.7"/>
                 </Button>
             </StackPanel>
 

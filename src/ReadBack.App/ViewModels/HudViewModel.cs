@@ -1,3 +1,18 @@
+﻿// Copyright 2026 ReadBack Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// SPDX-License-Identifier: Apache-2.0
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
@@ -10,6 +25,7 @@ public class HudViewModel : INotifyPropertyChanged
 {
     private readonly IPlaybackController _playback;
     private readonly ISettingsService _settings;
+    private readonly Themes.IHudThemeManager _themeManager;
 
     private string _statusText = "Idle";
     private string _chunkProgress = "";
@@ -19,6 +35,8 @@ public class HudViewModel : INotifyPropertyChanged
     private bool _isPaused = false;
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public Themes.IHudTheme CurrentTheme => _themeManager.CurrentTheme;
 
     public string StatusText
     {
@@ -62,10 +80,11 @@ public class HudViewModel : INotifyPropertyChanged
     public ICommand PrevCommand { get; }
     public ICommand CloseCommand { get; }
 
-    public HudViewModel(IPlaybackController playback, ISettingsService settings)
+    public HudViewModel(IPlaybackController playback, ISettingsService settings, Themes.IHudThemeManager themeManager)
     {
         _playback = playback;
         _settings = settings;
+        _themeManager = themeManager;
 
         PlayPauseCommand = new RelayCommand(() => _playback.TogglePause());
         StopCommand = new RelayCommand(() => _playback.Stop());
@@ -75,6 +94,14 @@ public class HudViewModel : INotifyPropertyChanged
 
         _playback.StateChanged += OnPlaybackStateChanged;
         _playback.ChunkChanged += OnChunkChanged;
+
+        _themeManager.ThemeChanged += (s, theme) =>
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentTheme)));
+            });
+        };
     }
 
     private void OnPlaybackStateChanged(object? sender, PlaybackStateChangedEventArgs e)
