@@ -15,6 +15,7 @@
 // SPDX-License-Identifier: Apache-2.0
 using ReadBack.Core.Models;
 using ReadBack.Core.Services;
+using ReadBack.Core.Sources;
 using ReadBack.Core.TTS;
 using Xunit;
 
@@ -82,6 +83,23 @@ public class ThemeAndVoiceTests
 
         // Verification that registration succeeded
         Assert.NotNull(composite);
+    }
+
+    [Fact]
+    public async Task TextSource_CustomProvider_SuppliesTextCorrectly()
+    {
+        ITextSource customSource = new MockTextSource("Selected paragraph content");
+        Assert.Equal("Mock Document", customSource.Name);
+        string? text = await customSource.GetTextAsync();
+        Assert.Equal("Selected paragraph content", text);
+    }
+
+    private class MockTextSource : ITextSource
+    {
+        private readonly string _content;
+        public string Name => "Mock Document";
+        public MockTextSource(string content) => _content = content;
+        public Task<string?> GetTextAsync(CancellationToken ct = default) => Task.FromResult<string?>(_content);
     }
 
     private class MockTTSEngine : ITTSEngine

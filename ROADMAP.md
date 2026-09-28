@@ -9,23 +9,27 @@ This document outlines the modular design principles of **ReadBack** and acts as
 ReadBack is built with a strictly decoupled, event-driven domain architecture targeting **.NET 10**:
 
 ```
-                       ┌───────────────────────────────┐
-                       │   Global Hotkeys (Win32 API)  │
-                       │   Ctrl+Alt+C / Esc / Space    │
-                       └───────────────┬───────────────┘
-                                       │
-                                       ▼
-┌───────────────────────────┐      ┌───────────────────────────────┐
-│ Windows Clipboard Service │─────▶│    IPlaybackController        │
-└───────────────────────────┘      └───────────────┬───────────────┘
-                                                   │
-                ┌──────────────────────────────────┴──────────────────────────────────┐
-                ▼                                                                     ▼
-┌───────────────────────────────┐                                     ┌───────────────────────────────┐
-│  INarrationPipeline (Filters) │                                     │       UI Presentation         │
-│  - CodeBlockFilter            │                                     │  - MiniFloatingHud (Win+H)    │
-│  - MarkdownFormattingFilter   │                                     │  - TrayIconService (WinForms) │
-│  - UrlSimplifierFilter        │                                     └───────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│           Pluggable Input Sources (ITextSource)        │
+│  - Windows Clipboard (Active Default)                  │
+│  - Click-to-Read Paragraph / Hover Inspector           │
+│  - Active UI Automation Selection                      │
+│  - Web Page / Browser DOM & Document Hooks (Word, PDF) │
+│  - Direct CLI / API Text Streaming                     │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+               ┌─────────────────────────┐
+               │   IPlaybackController   │
+               └────────────┬────────────┘
+                            │
+            ┌───────────────┴───────────────┐
+            ▼                               ▼
+┌───────────────────────────────┐   ┌───────────────────────────────┐
+│  INarrationPipeline (Filters) │   │       UI Presentation         │
+│  - CodeBlockFilter            │   │  - MiniFloatingHud (Win+H)    │
+│  - MarkdownFormattingFilter   │   │  - TrayIconService (WinForms) │
+│  - UrlSimplifierFilter        │   └───────────────────────────────┘
 │  - LatexMathFilter            │
 │  - TableFormattingFilter      │
 │  - [Future Plugins/Filters]   │
@@ -52,7 +56,10 @@ ReadBack is built with a strictly decoupled, event-driven domain architecture ta
 └───────────────────────────────┘
 ```
 
-### 1. Extensible Narration Pipeline (`INarrationFilter`)
+### 1. Pluggable Input Sources (`ITextSource`)
+While reading the Windows clipboard is the primary out-of-the-box modality, ReadBack is fundamentally architected as a universal screen and document narrator. Text ingestion is completely decoupled from playback through `ITextSource`, enabling future providers such as direct paragraph clicks, browser DOM hooks, and Word/PDF readers to pipe text into narration without altering the player or filters.
+
+### 2. Extensible Narration Pipeline (`INarrationFilter`)
 Text does not go straight to speech; it traverses an ordered chain of filters. Anyone can register new filters at runtime or compile-time without touching the core engine:
 
 ```csharp
@@ -65,7 +72,7 @@ public class CustomFilter : INarrationFilter
 }
 ```
 
-### 2. Multi-Provider Speech Engine (`ITTSEngine`)
+### 3. Multi-Provider Speech Engine (`ITTSEngine`)
 TTS engines are abstracted behind `ITTSEngine`. Adding local offline AI models (e.g., Piper, Kokoro, Whisper, or cloud OpenAI/ElevenLabs) simply requires implementing `ITTSEngine`.
 
 ---
@@ -78,10 +85,13 @@ TTS engines are abstracted behind `ITTSEngine`. Adding local offline AI models (
 - [ ] **Word-by-Word Highlighting**: Real-time karaoke-style word highlighting in the HUD as words are spoken.
 - [ ] **Pin / Dock Mode**: Option to dock the pill to the screen edge or keep it persistently visible.
 
-### Phase 2: Input Sources & Smart Capture
+### Phase 2: Universal Input Sources & Smart Context Capture
+- [ ] **Click-to-Read Paragraph Action**: Click or right-click any paragraph directly in a web page, Word document, or PDF to instantly read just that section without copying.
+- [ ] **Active Selection Hook (UI Automation)**: Narrate highlighted text directly via Windows Accessibility API (`IUIAutomation`) without touching the user's clipboard buffer.
+- [ ] **Document Reader Integration**: Native readers for `.docx`, `.pdf`, and `.epub` to stream long-form reading with paragraph navigation.
+- [ ] **Web Page & Browser Extension**: Direct DOM-level reading with live paragraph highlight.
 - [ ] **Auto-Read on Copy Mode**: Toggle to automatically narrate any text copied to clipboard (`Ctrl+C`) without needing `Ctrl+Alt+C`.
 - [ ] **OCR Screen Snipping (`Ctrl+Alt+S`)**: Select a rectangular region on screen (e.g., image, protected PDF, remote desktop) and read text aloud using Windows Media OCR.
-- [ ] **Active Selection Hook**: Narrate highlighted text directly without overwriting the user's clipboard buffer.
 
 ### Phase 3: Advanced Narration Filters
 - [ ] **AI Summarization Filter**: Condense long 20-page documents or email threads into a 2-minute bulleted audio summary before reading.

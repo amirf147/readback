@@ -4,14 +4,14 @@
   <img src="assets/readback-overview.jpg" alt="ReadBack Overview & Architecture" width="100%" />
 </p>
 
-> **Instant Clipboard Text-to-Speech for Windows**  
+> **Instant Screen & Document Text-to-Speech for Windows**  
 > Built with modern **C# & .NET 10**, Microsoft Edge Neural Voices, offline Windows SAPI fallback, and a sleek **Win+H style floating HUD**.
 
 ---
 
 ## 🌟 What is ReadBack?
 
-ReadBack turns any text on your screen into natural, human-sounding speech instantly. Whether you are consuming AI chat responses (Gemini, ChatGPT), technical articles, documentation, or emails, ReadBack eliminates reading fatigue with zero friction.
+ReadBack turns any text on your screen into natural, human-sounding speech instantly. While reading from the Windows clipboard (`Ctrl+Alt+C`) is the primary out-of-the-box modality, ReadBack's core engine is built around a pluggable text source architecture (`ITextSource`) designed for universal screen reading—including active selections, paragraph click-to-read actions, web pages, and Word/PDF documents.
 
 Highlight any text, press **`Ctrl + Alt + C`**, and listen.
 
