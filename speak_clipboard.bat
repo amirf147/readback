@@ -1,4 +1,4 @@
-﻿@REM Copyright 2026 ReadBack Contributors
+﻿@REM Copyright 2026 Amir Farhadi
 @REM
 @REM Licensed under the Apache License, Version 2.0 (the "License");
 @REM you may not use this file except in compliance with the License.

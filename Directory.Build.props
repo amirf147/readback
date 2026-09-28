@@ -1,5 +1,5 @@
-<!--
-Copyright 2026 ReadBack Contributors
+﻿<!--
+Copyright 2026 Amir Farhadi
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ SPDX-License-Identifier: Apache-2.0
     <AssemblyVersion>0.1.0.0</AssemblyVersion>
     <FileVersion>0.1.0.0</FileVersion>
     <InformationalVersion>0.1.0</InformationalVersion>
-    <Company>ReadBack Contributors</Company>
+    <Authors>Amir Farhadi</Authors>
+    <Company>Amir Farhadi</Company>
     <Product>ReadBack</Product>
-    <Copyright>Copyright © 2026 ReadBack Contributors</Copyright>
+    <Copyright>Copyright © 2026 Amir Farhadi</Copyright>
   </PropertyGroup>
 </Project>
