@@ -26,56 +26,69 @@ Highlight any text, press **`Ctrl + Alt + C`**, and listen.
   - Default **Windows 11 Acrylic Glass** aesthetic with native DWM blur, subtle specular border, and ambient drop shadow.
   - **Modular Theming Engine**: Switch instantly between *Windows 11 Glass*, *Windows 11 Mica (Dark)*, *Windows 11 Light Glass*, and *High Contrast Accessibility*.
   - Live progress display (`2 / 5`), current sentence preview, animated 3-bar soundwave visualizer, and drag grip.
-  - Mini media controls: **Previous Paragraph**, **Play/Pause**, **Next Paragraph**, **Stop**, and **Hide**.
-- 🗣️ **Default Storyteller Voice: Microsoft Christopher (Natural Online)**:
-  - Ultra-realistic, expressive human narration with zero robotic artifacts.
+  - **Persistent on Completion**: Stays on screen when reading finishes so you never lose your place.
+  - Mini media controls: **Previous Paragraph**, **Play/Pause**, **Next Paragraph**, **Stop**, and **Close**.
+- 🗣️ **Categorized Voice Selection**:
+  - **🌐 Neural Voice Selection**: Ultra-realistic Microsoft Edge natural online voices filtered cleanly to English (Christopher ⭐, Guy ⚡, Jenny ⚡, Aria, Eric, Emma, Sonia, Ryan) with custom whitelist support in `settings.json`.
+  - **🖥️ SAPI Voice Selection**: Fast local Windows offline voices (Microsoft David Desktop ⚡ for turbo speed and clarity, Microsoft Zira Desktop).
   - Zero API keys, subscriptions, or credit cards required.
-  - One-click voice picker for other natural voices: `Jenny`, `Guy`, `Aria`, `Eric`, `Emma`, `Sonia`, and `Ryan`.
 - 📥 **Integrated Windows Voice Downloader**:
   - Direct shortcut from the tray menu into Windows Speech Settings (`ms-settings:speech`) to download dozens of free offline Microsoft voice packages.
-- 🛡️ **Offline SAPI Fallback**: If offline or internet drops, automatically and gracefully falls back to local Windows voices (`David`, `Zira`).
+- 🛡️ **Offline SAPI Fallback**: If offline or internet drops, automatically and gracefully falls back to local Windows voices (`David`, `Zira`). Dedicated *Offline Only (Windows SAPI)* toggle available in tray.
 - 🧠 **Extensible Modular Architecture**:
   - Register custom TTS engines (`ITTSEngine`), custom HUD themes (`IHudTheme`), or narration cleanup filters (`INarrationFilter`) with clean single-interface contracts.
-- ⌨️ **Native Global Hotkeys**:
+- ⌨️ **Native Global Hotkeys & Two-Stage Escape**:
   - `Ctrl + Alt + C`: Narrate clipboard (or toggle).
-  - `Ctrl + Alt + X` or `Esc`: Stop narration.
+  - `Ctrl + Alt + H`: Toggle / show Heads-Up Display (HUD).
   - `Ctrl + Alt + Space`: Pause / Resume.
   - `Ctrl + Alt + Right`: Skip to next paragraph.
   - `Ctrl + Alt + Left`: Jump to previous paragraph.
-- 🔔 **System Tray Integration**: Quietly runs in the Windows notification tray with a categorized right-click menu for voices, speeds (0.85x to 1.5x), themes, and settings.
-- 🚀 **Zero Script Wrappers**: Pure compiled Windows binary (`ReadBack.exe`). No Python runtime, no `.bat`, no `.vbs`, no console popups.
+  - `Ctrl + Alt + X`: Immediately stop narration.
+  - `Esc`: **Two-Stage Dismissal** — first press stops narration while keeping HUD open; second press dismisses the HUD.
+- 🔔 **System Tray Integration**:
+  - **Left-Click**: Instantly shows and focuses the floating HUD.
+  - **Right-Click**: Opens the full categorized context menu for Neural voices, SAPI voices, speeds (0.85x up to 3.0x Turbo), themes, and settings.
+- 🚀 **Zero Script Wrappers & Instant IPC**: Pure compiled Windows binary (`ReadBack.exe`). Background NamedPipe IPC allows instant CLI signaling (`--clip`, `--turbo`, `--hud`, `--stop`) in 0ms without hijacking the console.
 
 ---
 
 ## ⌨️ Global Shortcuts
 
-| Shortcut | Action |
-| :--- | :--- |
-| **`Ctrl + Alt + C`** | Narrate current clipboard text |
-| **`Ctrl + Alt + Space`** | Pause / Resume narration |
-| **`Ctrl + Alt + Right`** | Skip to next paragraph / sentence |
-| **`Ctrl + Alt + Left`** | Previous paragraph / sentence |
-| **`Ctrl + Alt + X`** or **`Esc`** | Immediately stop narration |
+| Shortcut | Action | Description |
+| :--- | :--- | :--- |
+| **`Ctrl + Alt + C`** | Narrate Clipboard | Reads current clipboard text (or toggles stop/start) |
+| **`Ctrl + Alt + H`** | Toggle HUD | Shows or hides the floating Windows 11 capsule toolbar |
+| **`Ctrl + Alt + Space`** | Pause / Resume | Pauses speech at the exact current position |
+| **`Ctrl + Alt + Right`** | Next Paragraph | Skips forward to the next sentence or paragraph |
+| **`Ctrl + Alt + Left`** | Previous Paragraph | Jumps back to repeat previous sentence or paragraph |
+| **`Ctrl + Alt + X`** | Stop Narration | Immediately stops active speech |
+| **`Esc`** | Two-Stage Dismiss | **1st press**: Stops playback (keeps HUD open)<br/>**2nd press**: Dismisses the HUD |
 
 ---
 
 ## 💻 Command Line & Script Helpers
 
-ReadBack can be used directly from PowerShell or Command Prompt:
+ReadBack supports background NamedPipe IPC. When `ReadBack.exe` is already running in your tray, running CLI commands signals the active instance in milliseconds without launching a second app or stealing terminal focus:
 
 ```powershell
-# 1. Narrate whatever is currently in the clipboard:
-.\Read-Clipboard.ps1
-# or:
-.\speak_clipboard.bat
-# or directly:
-dotnet run --project src/ReadBack.App/ReadBack.App.csproj -c Release -- speak
+# 1. Narrate clipboard text:
+.\publish\ReadBack.exe --clip
 
-# 2. Speak custom text directly from console:
-dotnet run --project src/ReadBack.App/ReadBack.App.csproj -c Release -- text "Hello from ReadBack!"
+# 2. Narrate clipboard in high-speed Turbo mode (2.0x):
+.\publish\ReadBack.exe --clip --turbo
 
-# 3. List all natural and offline voices in the terminal:
-dotnet run --project src/ReadBack.App/ReadBack.App.csproj -c Release -- voices
+# 3. Toggle or show the floating Heads-Up Display:
+.\publish\ReadBack.exe --hud
+
+# 4. Stop or pause current playback:
+.\publish\ReadBack.exe --stop
+.\publish\ReadBack.exe --pause
+
+# 5. Speak custom text directly:
+.\publish\ReadBack.exe --text "Hello from ReadBack!"
+
+# 6. List all available natural and offline voices in the terminal:
+.\publish\ReadBack.exe voices
 ```
 
 ---

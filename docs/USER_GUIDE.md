@@ -48,21 +48,24 @@ ReadBack includes full CLI mode support, allowing you to use it from PowerShell 
 ReadBack defaults to **Microsoft Christopher Online (Natural)** (`en-US-ChristopherNeural`), providing rich, expressive, storyteller-grade narration.
 
 ### Switching Voices
-Right-click the ReadBack tray icon near the system clock and open **🗣️ Voice Selection**:
-- **Natural Online Voices (Microsoft Edge)**:
+Right-click the ReadBack tray icon near the system clock to access the two categorized voice menus:
+- **🌐 Neural Voice Selection (Microsoft Edge Natural)**:
   - ⭐ **Microsoft Christopher (US Natural)** - Expressive, warm storyteller male *(Default & Recommended)*
-  - **Microsoft Jenny (US Natural)** - Clear, versatile female
-  - **Microsoft Guy (US Natural)** - Balanced, conversational male
+  - ⚡ **Microsoft Guy (US Natural)** - Articulated fast-reading male
+  - ⚡ **Microsoft Jenny (US Natural)** - Clear, brisk female
   - **Microsoft Aria (US Natural)** - Expressive, dynamic female
   - **Microsoft Eric (US Natural)** - Friendly, upbeat male
   - **Microsoft Emma (US Multilingual)** - Modern multilingual female
   - **Microsoft Sonia (UK Natural)** - British natural female
   - **Microsoft Ryan (UK Natural)** - British natural male
-- **Installed Windows Voices (Offline)**:
-  - Local system SAPI voices (e.g. `Microsoft David Desktop`, `Microsoft Zira Desktop`).
+  - **More English Voices...** - Nested list of all additional discovered English voices.
+  - **⚙️ Configure Voices in settings.json...** - Directly open your configuration file to define a custom voice whitelist (`NeuralVoiceWhitelist`).
+- **🖥️ SAPI Voice Selection (Windows Offline)**:
+  - ⚡ **Microsoft David Desktop** - Crisp, high-speed clarity offline voice *(Recommended for Turbo mode)*.
+  - **Microsoft Zira Desktop** - Standard Windows female offline voice.
 
-### 🛡️ Automatic Offline Fallback
-If your internet connection drops or Microsoft Edge endpoints are temporarily unreachable, ReadBack **never crashes or stops working**—it automatically and seamlessly falls back to your local Windows offline voices.
+### 🛡️ Automatic Offline Fallback & Offline-Only Mode
+If your internet connection drops or Microsoft Edge endpoints are temporarily unreachable, ReadBack **never crashes or stops working**—it automatically and seamlessly falls back to your local Windows offline voices. You can also manually toggle **Offline Only (Windows SAPI)** in the tray menu.
 
 ---
 
@@ -70,13 +73,13 @@ If your internet connection drops or Microsoft Edge endpoints are temporarily un
 
 Windows includes a large library of high-quality offline voices that you can install completely free:
 
-1. Right-click the ReadBack tray icon and click **📥 Download More Windows Voices (Settings)...**  
+1. Right-click the ReadBack tray icon, open **🖥️ SAPI Voice Selection**, and click **📥 Download More Windows Voices (Settings)...**  
    *(Alternatively, press `Win + I` → **Time & language** → **Speech**)*.
 2. In the Windows Settings window, scroll to **Manage voices**.
 3. Click **Add voices**.
 4. Browse or search for languages/accents (e.g. English - United Kingdom, English - Australia, English - Canada, Spanish, German, French, Japanese).
 5. Check the box and click **Add**.
-6. Once downloaded, ReadBack automatically discovers and lists them under **Installed Windows Voices (Offline)**.
+6. Once downloaded, ReadBack automatically discovers and lists them under **🖥️ SAPI Voice Selection**.
 
 ---
 
@@ -89,6 +92,7 @@ The default theme uses **Windows 11 Acrylic Glass**:
 - Translucent frosted glass backdrop with Desktop Window Manager (DWM) composition.
 - Subtle specular border with glowing blue accent badge.
 - Animated 3-bar soundwave visualizer that pulses while audio is actively playing.
+- **Persistent Display**: When speech finishes or is stopped, the HUD remains on screen so you can review what was read or replay chunks.
 - Draggable anywhere: click and drag the grip icon or anywhere on the pill to reposition.
 
 ### Changing Themes
@@ -105,21 +109,25 @@ Right-click the tray icon and select **🎨 HUD Theme**:
 | Shortcut | Action | Description |
 | :--- | :--- | :--- |
 | **`Ctrl + Alt + C`** | **Narrate Clipboard** | Reads the current clipboard text. If playing, toggles stop/start. |
+| **`Ctrl + Alt + H`** | **Toggle Floating HUD** | Shows or hides the floating heads-up display. |
 | **`Ctrl + Alt + Space`** | **Pause / Resume** | Pauses speech at the exact current position and resumes smoothly. |
 | **`Ctrl + Alt + Right`** | **Next Paragraph** | Skips forward to the next sentence or paragraph chunk. |
 | **`Ctrl + Alt + Left`** | **Previous Paragraph** | Jumps back to repeat the previous sentence or paragraph. |
-| **`Ctrl + Alt + X`** / **`Esc`** | **Stop Narration** | Immediately stops playback and hides the floating HUD. |
+| **`Ctrl + Alt + X`** | **Stop Narration** | Immediately stops playback while keeping the HUD on screen. |
+| **`Esc`** | **Two-Stage Dismiss** | **1st press**: Stops narration (keeps HUD open).<br/>**2nd press**: Closes the HUD display. |
 
 ---
 
 ## ⚙️ Additional Features & Settings
 
+- **🖱️ Tray Icon Left-Click**: Instantly brings the floating HUD into view and focus; right-click opens the context menu.
 - **🚀 Launch at Windows Startup**: Automatically starts ReadBack in the system tray when you log into Windows (toggled with one click from the tray menu).
-- **⚡ Reading Speed**: Adjust playback rate from `0.85x` (slower), `1.0x` (normal), `1.15x`, `1.25x`, to `1.5x` (super fast).
+- **⚡ Reading Speed**: Adjust playback rate from `0.85x` (slower), `1.0x` (normal), `1.15x`, `1.25x`, `1.5x`, `1.75x`, `2.0x` (⚡ Turbo), `2.5x`, up to `3.0x` (⚡ Extreme Limit).
 - **Show Floating HUD**: Toggle whether the floating capsule displays during narration.
 - **Skip Code Snippets**: Intelligently detects Markdown code blocks (e.g. ````python ... ````) and replaces them with a spoken summary `"(Omitted python code snippet)"` so you don't have to listen to raw syntax.
 - **Sound Feedback Chimes**: Plays a gentle Windows chime when speech starts.
 - **Offline Only Mode**: Forces ReadBack to exclusively use local Windows SAPI voices without using the internet.
+- **⚙️ Open Settings Configuration**: One-click tray menu option to open `%APPDATA%\ReadBack\settings.json` to configure hotkeys, themes, or custom voice whitelists.
 
 ---
 
