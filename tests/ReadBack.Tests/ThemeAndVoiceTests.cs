@@ -33,6 +33,15 @@ public class ThemeAndVoiceTests
     }
 
     [Fact]
+    public void AssemblyVersion_IsSemVerInitialRelease_0_1_0()
+    {
+        var ver = typeof(AppSettings).Assembly.GetName().Version;
+        Assert.NotNull(ver);
+        Assert.Equal(0, ver.Major);
+        Assert.Equal(1, ver.Minor);
+    }
+
+    [Fact]
     public void SettingsService_SavesAndLoadsLaunchAtStartup()
     {
         string tempPath = Path.Combine(Path.GetTempPath(), $"settings_test_{Guid.NewGuid():N}.json");

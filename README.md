@@ -61,7 +61,7 @@ Highlight any text, press **`Ctrl + Alt + C`**, and listen.
 
 ## 💻 Command Line & Script Helpers
 
-Just like `clip-narrator`, ReadBack can be used directly from PowerShell or Command Prompt:
+ReadBack can be used directly from PowerShell or Command Prompt:
 
 ```powershell
 # 1. Narrate whatever is currently in the clipboard:

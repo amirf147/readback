@@ -1,4 +1,4 @@
-﻿// Copyright 2026 ReadBack Contributors
+// Copyright 2026 ReadBack Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -152,14 +152,23 @@ public partial class App : System.Windows.Application
                 Shutdown();
                 return;
             }
+            else if (cmd == "--version" || cmd == "-v" || cmd == "version")
+            {
+                var ver = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
+                Console.WriteLine($"ReadBack v{ver}");
+                Shutdown();
+                return;
+            }
             else if (cmd == "--help" || cmd == "-h" || cmd == "help")
             {
-                Console.WriteLine("ReadBack - Instant Clipboard Text-to-Speech");
+                var ver = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
+                Console.WriteLine($"ReadBack v{ver} - Instant Screen & Document Text-to-Speech");
                 Console.WriteLine("Usage:");
-                Console.WriteLine("  ReadBack.exe         Run in system tray with floating HUD (default)");
-                Console.WriteLine("  ReadBack.exe speak   Read clipboard text directly in console");
-                Console.WriteLine("  ReadBack.exe text    Read custom text string directly");
-                Console.WriteLine("  ReadBack.exe voices  List available natural online and offline voices");
+                Console.WriteLine("  ReadBack.exe            Run in system tray with floating HUD (default)");
+                Console.WriteLine("  ReadBack.exe speak      Read clipboard text directly in console");
+                Console.WriteLine("  ReadBack.exe text <msg> Read custom text string directly");
+                Console.WriteLine("  ReadBack.exe voices     List available natural online and offline voices");
+                Console.WriteLine("  ReadBack.exe --version  Show application version");
                 Shutdown();
                 return;
             }
