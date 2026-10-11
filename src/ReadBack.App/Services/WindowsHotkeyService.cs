@@ -29,8 +29,11 @@ public class WindowsHotkeyService : IHotkeyService
     // Windows API constants
     private const int WH_KEYBOARD_LL = 13;
     private const int WM_KEYDOWN = 0x0100;
+    private const int WM_KEYUP = 0x0101;
     private const int WM_SYSKEYDOWN = 0x0104;
+    private const int WM_SYSKEYUP = 0x0105;
     private const int WM_HOTKEY = 0x0312;
+    private const long DuplicateTriggerWindowMs = 75;
 
     private const uint MOD_ALT = 0x0001;
     private const uint MOD_CONTROL = 0x0002;
@@ -72,6 +75,11 @@ public class WindowsHotkeyService : IHotkeyService
     private delegate nint LowLevelKeyboardProc(int nCode, nint wParam, nint lParam);
     private LowLevelKeyboardProc? _llProc;
     private nint _hookId = 0;
+    private readonly HashSet<int> _pressedKeys = new();
+    private readonly object _pressedKeysLock = new();
+    private readonly HashSet<int> _registeredHotkeys = new();
+    private readonly object _triggerLock = new();
+    private readonly Dictionary<int, long> _lastTriggerTimes = new();
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, nint hMod, uint dwThreadId);
@@ -88,14 +96,6 @@ public class WindowsHotkeyService : IHotkeyService
 
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern nint GetModuleHandle(string? lpModuleName);
-
-    private DateTime _lastSpeakTime = DateTime.MinValue;
-    private DateTime _lastStopTime = DateTime.MinValue;
-    private DateTime _lastPauseTime = DateTime.MinValue;
-    private DateTime _lastNextTime = DateTime.MinValue;
-    private DateTime _lastPrevTime = DateTime.MinValue;
-    private DateTime _lastHudTime = DateTime.MinValue;
-    private DateTime _lastEscapeTime = DateTime.MinValue;
 
     public WindowsHotkeyService(ISettingsService settingsService)
     {
@@ -127,39 +127,54 @@ public class WindowsHotkeyService : IHotkeyService
 
     private nint HookCallback(int nCode, nint wParam, nint lParam)
     {
-        if (nCode >= 0 && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+        if (nCode >= 0)
         {
             int vkCode = Marshal.ReadInt32(lParam);
-            bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-            bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
-
-            if (ctrl && alt)
+            if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
             {
-                switch (vkCode)
-                {
-                    case VK_C:
-                        TriggerSpeak();
-                        break;
-                    case VK_X:
-                        TriggerStop();
-                        break;
-                    case VK_SPACE:
-                        TriggerPause();
-                        break;
-                    case VK_RIGHT:
-                        TriggerNext();
-                        break;
-                    case VK_LEFT:
-                        TriggerPrev();
-                        break;
-                    case VK_H:
-                        TriggerHud();
-                        break;
-                }
+                lock (_pressedKeysLock)
+                    _pressedKeys.Remove(vkCode);
             }
-            else if (vkCode == VK_ESCAPE)
+            else if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
             {
-                TriggerEscape();
+                bool isFirstKeyDown;
+                lock (_pressedKeysLock)
+                    isFirstKeyDown = _pressedKeys.Add(vkCode);
+
+                if (isFirstKeyDown)
+                {
+                    bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+                    bool alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+
+                    if (ctrl && alt)
+                    {
+                        switch (vkCode)
+                        {
+                            case VK_C when !_registeredHotkeys.Contains(HOTKEY_ID_SPEAK):
+                                TriggerSpeak();
+                                break;
+                            case VK_X when !_registeredHotkeys.Contains(HOTKEY_ID_STOP):
+                                TriggerStop();
+                                break;
+                            case VK_SPACE when !_registeredHotkeys.Contains(HOTKEY_ID_PAUSE):
+                                TriggerPause();
+                                break;
+                            case VK_RIGHT when !_registeredHotkeys.Contains(HOTKEY_ID_NEXT):
+                                TriggerNext();
+                                break;
+                            case VK_LEFT when !_registeredHotkeys.Contains(HOTKEY_ID_PREV):
+                                TriggerPrev();
+                                break;
+                            case VK_H when !_registeredHotkeys.Contains(HOTKEY_ID_HUD):
+                                TriggerHud();
+                                break;
+                        }
+                    }
+                    else if (vkCode == VK_ESCAPE)
+                    {
+                        TriggerEscape();
+                    }
+                }
             }
         }
 
@@ -171,23 +186,32 @@ public class WindowsHotkeyService : IHotkeyService
         if (_hwnd == 0) return;
         UnregisterHotkeys();
 
-        RegisterHotKey(_hwnd, HOTKEY_ID_SPEAK, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_C);
-        RegisterHotKey(_hwnd, HOTKEY_ID_STOP, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_X);
-        RegisterHotKey(_hwnd, HOTKEY_ID_PAUSE, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_SPACE);
-        RegisterHotKey(_hwnd, HOTKEY_ID_NEXT, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_RIGHT);
-        RegisterHotKey(_hwnd, HOTKEY_ID_PREV, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_LEFT);
-        RegisterHotKey(_hwnd, HOTKEY_ID_HUD, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)VK_H);
+        TryRegisterHotkey(HOTKEY_ID_SPEAK, VK_C);
+        TryRegisterHotkey(HOTKEY_ID_STOP, VK_X);
+        TryRegisterHotkey(HOTKEY_ID_PAUSE, VK_SPACE);
+        TryRegisterHotkey(HOTKEY_ID_NEXT, VK_RIGHT);
+        TryRegisterHotkey(HOTKEY_ID_PREV, VK_LEFT);
+        TryRegisterHotkey(HOTKEY_ID_HUD, VK_H);
+    }
+
+    private void TryRegisterHotkey(int id, int virtualKey)
+    {
+        if (RegisterHotKey(_hwnd, id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)virtualKey))
+        {
+            _registeredHotkeys.Add(id);
+        }
+        else
+        {
+            Console.Error.WriteLine($"[Hotkeys] Failed to register hotkey ID {id}; using the low-level keyboard hook as fallback.");
+        }
     }
 
     public void UnregisterHotkeys()
     {
         if (_hwnd == 0) return;
-        UnregisterHotKey(_hwnd, HOTKEY_ID_SPEAK);
-        UnregisterHotKey(_hwnd, HOTKEY_ID_STOP);
-        UnregisterHotKey(_hwnd, HOTKEY_ID_PAUSE);
-        UnregisterHotKey(_hwnd, HOTKEY_ID_NEXT);
-        UnregisterHotKey(_hwnd, HOTKEY_ID_PREV);
-        UnregisterHotKey(_hwnd, HOTKEY_ID_HUD);
+        foreach (int id in _registeredHotkeys)
+            UnregisterHotKey(_hwnd, id);
+        _registeredHotkeys.Clear();
     }
 
     private nint HwndHook(nint hwnd, int msg, nint wParam, nint lParam, ref bool handled)
@@ -228,51 +252,60 @@ public class WindowsHotkeyService : IHotkeyService
 
     private void TriggerSpeak()
     {
-        if ((DateTime.UtcNow - _lastSpeakTime).TotalMilliseconds < 350) return;
-        _lastSpeakTime = DateTime.UtcNow;
+        if (!TryBeginTrigger(HOTKEY_ID_SPEAK)) return;
         SpeakRequested?.Invoke();
     }
 
     private void TriggerStop()
     {
-        if ((DateTime.UtcNow - _lastStopTime).TotalMilliseconds < 350) return;
-        _lastStopTime = DateTime.UtcNow;
+        if (!TryBeginTrigger(HOTKEY_ID_STOP)) return;
         StopRequested?.Invoke();
     }
 
     private void TriggerPause()
     {
-        if ((DateTime.UtcNow - _lastPauseTime).TotalMilliseconds < 350) return;
-        _lastPauseTime = DateTime.UtcNow;
+        if (!TryBeginTrigger(HOTKEY_ID_PAUSE)) return;
         PauseRequested?.Invoke();
     }
 
     private void TriggerNext()
     {
-        if ((DateTime.UtcNow - _lastNextTime).TotalMilliseconds < 350) return;
-        _lastNextTime = DateTime.UtcNow;
+        if (!TryBeginTrigger(HOTKEY_ID_NEXT)) return;
         NextRequested?.Invoke();
     }
 
     private void TriggerPrev()
     {
-        if ((DateTime.UtcNow - _lastPrevTime).TotalMilliseconds < 350) return;
-        _lastPrevTime = DateTime.UtcNow;
+        if (!TryBeginTrigger(HOTKEY_ID_PREV)) return;
         PrevRequested?.Invoke();
     }
 
     private void TriggerHud()
     {
-        if ((DateTime.UtcNow - _lastHudTime).TotalMilliseconds < 350) return;
-        _lastHudTime = DateTime.UtcNow;
+        if (!TryBeginTrigger(HOTKEY_ID_HUD)) return;
         HudRequested?.Invoke();
     }
 
     private void TriggerEscape()
     {
-        if ((DateTime.UtcNow - _lastEscapeTime).TotalMilliseconds < 300) return;
-        _lastEscapeTime = DateTime.UtcNow;
+        if (!TryBeginTrigger(VK_ESCAPE)) return;
         EscapeRequested?.Invoke();
+    }
+
+    private bool TryBeginTrigger(int id)
+    {
+        long now = Environment.TickCount64;
+        lock (_triggerLock)
+        {
+            if (_lastTriggerTimes.TryGetValue(id, out long lastTime)
+                && now - lastTime < DuplicateTriggerWindowMs)
+            {
+                return false;
+            }
+
+            _lastTriggerTimes[id] = now;
+            return true;
+        }
     }
 
     public void Dispose()
@@ -287,5 +320,7 @@ public class WindowsHotkeyService : IHotkeyService
         _source?.RemoveHook(HwndHook);
         _source?.Dispose();
         _source = null;
+        lock (_pressedKeysLock)
+            _pressedKeys.Clear();
     }
 }

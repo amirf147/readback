@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,134 +20,177 @@ namespace ReadBack.App.Services;
 
 public class WindowsAudioPlayer : IAudioPlayer
 {
-    private MediaPlayer? _player;
-    private TaskCompletionSource<bool>? _playbackTcs;
-    private CancellationTokenSource? _watchdogCts;
+    private sealed class PlaybackOperation
+    {
+        public TaskCompletionSource<bool> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public CancellationTokenSource? WatchdogCts;
+        public MediaPlayer? Player { get; set; }
+    }
+
     private readonly object _lock = new();
-
-    public WindowsAudioPlayer()
-    {
-        CreatePlayerOnDispatcher();
-    }
-
-    private void CreatePlayerOnDispatcher()
-    {
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
-        {
-            try
-            {
-                if (_player != null)
-                {
-                    _player.Stop();
-                    _player.Close();
-                }
-            }
-            catch { }
-
-            _player = new MediaPlayer();
-            _player.Volume = 1.0;
-
-            _player.MediaOpened += (s, e) =>
-            {
-                try
-                {
-                    if (_player.NaturalDuration.HasTimeSpan)
-                    {
-                        var duration = _player.NaturalDuration.TimeSpan;
-                        StartWatchdog(duration + TimeSpan.FromMilliseconds(750));
-                    }
-                }
-                catch { }
-            };
-
-            _player.MediaEnded += (s, e) =>
-            {
-                CancelWatchdog();
-                CompleteCurrentPlayback(true);
-            };
-
-            _player.MediaFailed += (s, e) =>
-            {
-                CancelWatchdog();
-                CompleteCurrentPlayback(false);
-            };
-        });
-    }
-
-    private void StartWatchdog(TimeSpan timeout)
-    {
-        CancelWatchdog();
-        _watchdogCts = new CancellationTokenSource();
-        var token = _watchdogCts.Token;
-
-        Task.Delay(timeout, token).ContinueWith(t =>
-        {
-            if (!t.IsCanceled)
-            {
-                CompleteCurrentPlayback(true);
-            }
-        }, TaskScheduler.Default);
-    }
-
-    private void CancelWatchdog()
-    {
-        try
-        {
-            _watchdogCts?.Cancel();
-            _watchdogCts?.Dispose();
-            _watchdogCts = null;
-        }
-        catch { }
-    }
-
-    private void CompleteCurrentPlayback(bool result)
-    {
-        lock (_lock)
-        {
-            _playbackTcs?.TrySetResult(result);
-        }
-    }
+    private PlaybackOperation? _currentOperation;
 
     public Task PlayFileAsync(string filePath)
     {
         if (!File.Exists(filePath))
             return Task.CompletedTask;
 
+        var operation = new PlaybackOperation();
+        PlaybackOperation? previousOperation;
         lock (_lock)
         {
-            _playbackTcs = new TaskCompletionSource<bool>();
+            previousOperation = _currentOperation;
+            _currentOperation = operation;
         }
-
-        // Estimate fallback duration based on file size (MP3 48kbps = 6,000 bytes/sec)
-        long fileLen = 0;
-        try { fileLen = new FileInfo(filePath).Length; } catch { }
-        double estimatedSeconds = Math.Max(2.0, (fileLen / 6000.0) + 1.5);
-        StartWatchdog(TimeSpan.FromSeconds(estimatedSeconds));
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
+            CancelOperation(previousOperation);
+
+            lock (_lock)
+            {
+                if (!ReferenceEquals(_currentOperation, operation))
+                {
+                    CancelOperation(operation);
+                    return;
+                }
+            }
+
+            var player = new MediaPlayer { Volume = 1.0 };
+            operation.Player = player;
+            player.MediaOpened += (_, _) =>
+            {
+                try
+                {
+                    if (player.NaturalDuration.HasTimeSpan)
+                    {
+                        StartWatchdog(operation, player.NaturalDuration.TimeSpan + TimeSpan.FromMilliseconds(750));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"[Audio] Could not read audio duration: {ex.Message}");
+                }
+            };
+            player.MediaEnded += (_, _) => CompleteOperation(operation, true);
+            player.MediaFailed += (_, e) =>
+            {
+                Console.Error.WriteLine($"[Audio] Media playback failed: {e.ErrorException?.Message ?? "Unknown media error"}");
+                CompleteOperation(operation, false);
+            };
+
+            long fileLen = 0;
+            try { fileLen = new FileInfo(filePath).Length; }
+            catch (Exception ex) { Console.Error.WriteLine($"[Audio] Could not read audio file size: {ex.Message}"); }
+            double estimatedSeconds = Math.Max(2.0, (fileLen / 6000.0) + 1.5);
+            StartWatchdog(operation, TimeSpan.FromSeconds(estimatedSeconds));
+
             try
             {
-                if (_player == null)
-                    CreatePlayerOnDispatcher();
-
-                _player?.Open(new Uri(filePath, UriKind.Absolute));
-                _player?.Play();
+                player.Open(new Uri(filePath, UriKind.Absolute));
+                player.Play();
             }
-            catch
+            catch (Exception ex)
             {
-                CompleteCurrentPlayback(false);
+                Console.Error.WriteLine($"[Audio] Could not start audio playback: {ex.Message}");
+                CompleteOperation(operation, false);
             }
         });
 
-        return _playbackTcs.Task;
+        return operation.Completion.Task;
+    }
+
+    private void StartWatchdog(PlaybackOperation operation, TimeSpan timeout)
+    {
+        var watchdogCts = new CancellationTokenSource();
+        lock (_lock)
+        {
+            if (!ReferenceEquals(_currentOperation, operation))
+            {
+                watchdogCts.Dispose();
+                return;
+            }
+
+            var previousWatchdog = Interlocked.Exchange(ref operation.WatchdogCts, watchdogCts);
+            if (previousWatchdog != null)
+            {
+                previousWatchdog.Cancel();
+                previousWatchdog.Dispose();
+            }
+        }
+        _ = WatchPlaybackAsync(operation, timeout, watchdogCts.Token);
+    }
+
+    private async Task WatchPlaybackAsync(PlaybackOperation operation, TimeSpan timeout, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(timeout, ct);
+            CompleteOperation(operation, true);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+    }
+
+    private static void CancelWatchdog(PlaybackOperation operation)
+    {
+        var watchdogCts = Interlocked.Exchange(ref operation.WatchdogCts, null);
+        if (watchdogCts == null)
+            return;
+
+        try
+        {
+            watchdogCts.Cancel();
+        }
+        finally
+        {
+            watchdogCts.Dispose();
+        }
+    }
+
+    private void CompleteOperation(PlaybackOperation operation, bool result)
+    {
+        lock (_lock)
+        {
+            if (!ReferenceEquals(_currentOperation, operation))
+                return;
+            _currentOperation = null;
+        }
+
+        CancelWatchdog(operation);
+        operation.Completion.TrySetResult(result);
+    }
+
+    private static void CancelOperation(PlaybackOperation? operation)
+    {
+        if (operation is null)
+            return;
+
+        CancelWatchdog(operation);
+        operation.Completion.TrySetCanceled();
+        try
+        {
+            operation.Player?.Stop();
+            operation.Player?.Close();
+            operation.Player = null;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Audio] Could not close the previous audio player: {ex.Message}");
+        }
     }
 
     public void Pause()
     {
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            try { _player?.Pause(); } catch { }
+            lock (_lock)
+            {
+                try { _currentOperation?.Player?.Pause(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[Audio] Could not pause playback: {ex.Message}"); }
+            }
         });
     }
 
@@ -155,26 +198,42 @@ public class WindowsAudioPlayer : IAudioPlayer
     {
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            try { _player?.Play(); } catch { }
+            lock (_lock)
+            {
+                try { _currentOperation?.Player?.Play(); }
+                catch (Exception ex) { Console.Error.WriteLine($"[Audio] Could not resume playback: {ex.Message}"); }
+            }
         });
     }
 
     public void Stop()
     {
-        CancelWatchdog();
-
+        PlaybackOperation? operation;
         lock (_lock)
         {
-            _playbackTcs?.TrySetCanceled();
+            operation = _currentOperation;
+            _currentOperation = null;
         }
 
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        if (operation is null)
+            return;
+
+        CancelWatchdog(operation);
+        operation.Completion.TrySetCanceled();
+        System.Windows.Application.Current.Dispatcher.Invoke(() => CancelOperationPlayer(operation));
+    }
+
+    private static void CancelOperationPlayer(PlaybackOperation operation)
+    {
+        try
         {
-            try
-            {
-                _player?.Stop();
-            }
-            catch { }
-        });
+            operation.Player?.Stop();
+            operation.Player?.Close();
+            operation.Player = null;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Audio] Could not stop playback: {ex.Message}");
+        }
     }
 }

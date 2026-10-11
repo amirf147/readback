@@ -35,10 +35,19 @@ public class PlaybackController : IPlaybackController
     private readonly Action _resumeAudioDelegate;
 
     private readonly string _cacheDir;
+    private readonly object _playbackLock = new();
     private CancellationTokenSource? _activeCts;
+    private CancellationTokenSource? _synthesisCts;
+    private Task _synthesisTask = Task.CompletedTask;
     private List<SpeechChunk> _chunks = new();
+    private TaskCompletionSource<bool>[] _chunkSynthesis = Array.Empty<TaskCompletionSource<bool>>();
     private int _currentIndex = -1;
+    private int _playbackGeneration;
+    private string? _lastText;
+    private int _lastPreviousIndex = -1;
+    private DateTime _lastPreviousTime = DateTime.MinValue;
     private PlaybackState _state = PlaybackState.Idle;
+    private static readonly TimeSpan PreviousDoublePressWindow = TimeSpan.FromSeconds(3);
 
     public PlaybackState State
     {
@@ -57,9 +66,30 @@ public class PlaybackController : IPlaybackController
         }
     }
 
-    public SpeechChunk? CurrentChunk => (_currentIndex >= 0 && _currentIndex < _chunks.Count) ? _chunks[_currentIndex] : null;
-    public int CurrentIndex => _currentIndex;
-    public int TotalChunks => _chunks.Count;
+    public SpeechChunk? CurrentChunk
+    {
+        get
+        {
+            lock (_playbackLock)
+                return (_currentIndex >= 0 && _currentIndex < _chunks.Count) ? _chunks[_currentIndex] : null;
+        }
+    }
+    public int CurrentIndex
+    {
+        get
+        {
+            lock (_playbackLock)
+                return _currentIndex;
+        }
+    }
+    public int TotalChunks
+    {
+        get
+        {
+            lock (_playbackLock)
+                return _chunks.Count;
+        }
+    }
     public bool IsPlaying => State == PlaybackState.Playing;
     public bool IsPaused => State == PlaybackState.Paused;
 
@@ -89,30 +119,65 @@ public class PlaybackController : IPlaybackController
         Directory.CreateDirectory(_cacheDir);
     }
 
-    public async Task PlayTextAsync(string rawText, string? overrideVoice = null, string? overrideSpeed = null, CancellationToken ct = default)
+    public Task PlayTextAsync(string rawText, string? overrideVoice = null, string? overrideSpeed = null, CancellationToken ct = default)
     {
-        Stop();
+        List<SpeechChunk> chunkSnapshot;
+        TaskCompletionSource<bool>[] chunkSynthesis;
+        bool resumeCurrentText;
 
-        var filterContext = new FilterContext(_settingsService.CurrentSettings);
-        string cleanedText = _pipeline.Process(rawText, filterContext);
-        if (string.IsNullOrWhiteSpace(cleanedText))
+        lock (_playbackLock)
         {
-            State = PlaybackState.Idle;
-            return;
+            resumeCurrentText = !string.IsNullOrWhiteSpace(_lastText)
+                && string.Equals(_lastText, rawText, StringComparison.Ordinal)
+                && _chunks.Count > 0
+                && _currentIndex >= 0
+                && _currentIndex < _chunks.Count;
+            chunkSnapshot = _chunks;
+            chunkSynthesis = _chunkSynthesis;
         }
 
-        _chunks = _chunker.SplitIntoChunks(cleanedText).ToList();
-        if (_chunks.Count == 0)
+        if (!resumeCurrentText)
         {
-            State = PlaybackState.Idle;
-            return;
+            var filterContext = new FilterContext(_settingsService.CurrentSettings);
+            string cleanedText = _pipeline.Process(rawText, filterContext);
+            var newChunks = string.IsNullOrWhiteSpace(cleanedText)
+                ? new List<SpeechChunk>()
+                : _chunker.SplitIntoChunks(cleanedText).ToList();
+
+            List<SpeechChunk> previousChunks;
+            Task previousSynthesisTask;
+            lock (_playbackLock)
+            {
+                previousChunks = _chunks;
+                previousSynthesisTask = _synthesisTask;
+                CancelPlaybackLoopLocked();
+                CancelSynthesis();
+                _chunks = newChunks;
+                _lastText = newChunks.Count == 0 ? null : rawText;
+                _currentIndex = newChunks.Count == 0 ? -1 : 0;
+                _lastPreviousIndex = -1;
+                _lastPreviousTime = DateTime.MinValue;
+                _chunkSynthesis = newChunks
+                    .Select(_ => new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously))
+                    .ToArray();
+                _synthesisCts = newChunks.Count == 0 ? null : CancellationTokenSource.CreateLinkedTokenSource(ct);
+                chunkSnapshot = _chunks;
+                chunkSynthesis = _chunkSynthesis;
+            }
+            _stopAudioDelegate();
+            _ = CleanupCachedAudioFilesAsync(previousChunks, previousSynthesisTask);
+
+            if (newChunks.Count == 0)
+            {
+                State = PlaybackState.Idle;
+                return Task.CompletedTask;
+            }
         }
-
-        _activeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var activeToken = _activeCts.Token;
-
-        State = PlaybackState.Playing;
-        _currentIndex = 0;
+        else
+        {
+            CancelPlaybackLoop();
+            _stopAudioDelegate();
+        }
 
         string voice = overrideVoice ?? _settingsService.CurrentSettings.Voice;
         if (overrideVoice == null && _settingsService.CurrentSettings.OfflineOnly &&
@@ -123,69 +188,264 @@ public class PlaybackController : IPlaybackController
         }
         string speed = overrideSpeed ?? _settingsService.CurrentSettings.Speed;
 
-        // Start background prefetch synthesis for all chunks
-        _ = Task.Run(() => SynthesizeRemainingChunksAsync(_chunks, voice, speed, activeToken), activeToken);
+        if (!resumeCurrentText)
+        {
+            CancellationTokenSource synthesisCts;
+            lock (_playbackLock)
+                synthesisCts = _synthesisCts!;
+            var synthesisToken = synthesisCts.Token;
+            Task synthesisTask = Task.Run(
+                () => SynthesizeRemainingChunksAsync(chunkSnapshot, chunkSynthesis, voice, speed, synthesisToken),
+                synthesisToken);
+            lock (_playbackLock)
+                _synthesisTask = synthesisTask;
+        }
 
-        // Start sequential playback loop
-        _ = Task.Run(() => PlaybackLoopAsync(activeToken), activeToken);
+        StartPlaybackLoop(chunkSnapshot, chunkSynthesis, ct);
+        return Task.CompletedTask;
     }
 
-    private async Task SynthesizeRemainingChunksAsync(List<SpeechChunk> chunks, string voice, string speed, CancellationToken ct)
+    private async Task SynthesizeRemainingChunksAsync(
+        List<SpeechChunk> chunks,
+        TaskCompletionSource<bool>[] chunkSynthesis,
+        string voice,
+        string speed,
+        CancellationToken ct)
     {
-        for (int i = 0; i < chunks.Count && !ct.IsCancellationRequested; i++)
+        try
         {
-            var chunk = chunks[i];
-            if (chunk.IsSynthesized) continue;
-
-            string filePath = Path.Combine(_cacheDir, $"chunk_{i}_{Guid.NewGuid():N}.mp3");
-            bool success = await _ttsEngine.SynthesizeToFileAsync(chunk.Text, filePath, voice, speed, ct);
-            if (success)
+            for (int i = 0; i < chunks.Count && !ct.IsCancellationRequested; i++)
             {
-                chunk.AudioFilePath = filePath;
+                var chunk = chunks[i];
+                if (chunk.IsSynthesized)
+                {
+                    chunkSynthesis[i].TrySetResult(true);
+                    continue;
+                }
+
+                string filePath = Path.Combine(_cacheDir, $"chunk_{i}_{Guid.NewGuid():N}.mp3");
+                try
+                {
+                    bool success = await _ttsEngine.SynthesizeToFileAsync(chunk.Text, filePath, voice, speed, ct);
+                    if (success && File.Exists(filePath))
+                    {
+                        chunk.AudioFilePath = filePath;
+                        chunkSynthesis[i].TrySetResult(true);
+                    }
+                    else
+                    {
+                        chunkSynthesis[i].TrySetResult(false);
+                        Console.Error.WriteLine($"[Playback] Speech synthesis failed for chunk {i}.");
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    chunkSynthesis[i].TrySetResult(false);
+                    Console.Error.WriteLine($"[Playback] Speech synthesis failed for chunk {i}: {ex.Message}");
+                }
+            }
+        }
+        finally
+        {
+            foreach (var completion in chunkSynthesis)
+            {
+                completion.TrySetResult(false);
             }
         }
     }
 
-    private async Task PlaybackLoopAsync(CancellationToken ct)
+    private async Task PlaybackLoopAsync(
+        List<SpeechChunk> chunks,
+        TaskCompletionSource<bool>[] chunkSynthesis,
+        int startIndex,
+        int generation,
+        CancellationToken ct)
     {
-        while (_currentIndex < _chunks.Count && !ct.IsCancellationRequested)
+        for (int chunkIndex = startIndex; chunkIndex >= 0 && chunkIndex < chunks.Count && !ct.IsCancellationRequested; chunkIndex++)
         {
-            var chunk = _chunks[_currentIndex];
+            lock (_playbackLock)
+            {
+                if (generation != _playbackGeneration || !ReferenceEquals(chunks, _chunks))
+                    return;
+                _currentIndex = chunkIndex;
+            }
+
+            var chunk = chunks[chunkIndex];
             ChunkChanged?.Invoke(this, new ChunkChangedEventArgs
             {
                 Chunk = chunk,
-                ChunkIndex = _currentIndex,
-                TotalChunks = _chunks.Count
+                ChunkIndex = chunkIndex,
+                TotalChunks = chunks.Count
             });
 
-            // Wait for current chunk audio synthesis if not ready yet
-            int waitCount = 0;
-            while (!chunk.IsSynthesized && waitCount < 100 && !ct.IsCancellationRequested)
+            bool isSynthesized;
+            try
             {
-                await Task.Delay(50, ct);
-                waitCount++;
+                isSynthesized = await chunkSynthesis[chunkIndex].Task.WaitAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
             }
 
-            if (ct.IsCancellationRequested || !chunk.IsSynthesized)
+            if (ct.IsCancellationRequested || !IsCurrentPlayback(chunks, generation, chunkIndex))
                 break;
+
+            if (!isSynthesized || !chunk.IsSynthesized)
+            {
+                if (!AdvanceAfterChunk(chunks, generation, chunkIndex))
+                {
+                    if (IsCurrentPlayback(chunks, generation, chunkIndex))
+                        CompletePlayback(chunks, generation);
+                    return;
+                }
+                continue;
+            }
 
             try
             {
                 await _playAudioDelegate(chunk.AudioFilePath!);
             }
-            catch
+            catch (Exception ex)
             {
-                // Move past audio error
+                if (!ct.IsCancellationRequested)
+                    Console.Error.WriteLine($"[Playback] Audio playback failed for chunk {chunkIndex}: {ex.Message}");
             }
 
-            if (ct.IsCancellationRequested) break;
+            if (ct.IsCancellationRequested)
+                break;
 
-            _currentIndex++;
+            if (!AdvanceAfterChunk(chunks, generation, chunkIndex))
+            {
+                if (IsCurrentPlayback(chunks, generation, chunkIndex))
+                    CompletePlayback(chunks, generation);
+                return;
+            }
         }
 
         if (!ct.IsCancellationRequested)
         {
-            Stop();
+            CompletePlayback(chunks, generation);
+        }
+    }
+
+    private bool IsCurrentPlayback(List<SpeechChunk> chunks, int generation, int chunkIndex)
+    {
+        lock (_playbackLock)
+        {
+            return generation == _playbackGeneration
+                && ReferenceEquals(chunks, _chunks)
+                && _currentIndex == chunkIndex;
+        }
+    }
+
+    private bool AdvanceAfterChunk(List<SpeechChunk> chunks, int generation, int chunkIndex)
+    {
+        lock (_playbackLock)
+        {
+            if (generation != _playbackGeneration || !ReferenceEquals(chunks, _chunks) || _currentIndex != chunkIndex)
+                return false;
+
+            if (chunkIndex >= chunks.Count - 1)
+                return false;
+
+            _currentIndex = chunkIndex + 1;
+            return true;
+        }
+    }
+
+    private void CancelPlaybackLoop()
+    {
+        lock (_playbackLock)
+            CancelPlaybackLoopLocked();
+    }
+
+    private void CancelPlaybackLoopLocked()
+    {
+        _playbackGeneration++;
+        _activeCts?.Cancel();
+        _activeCts?.Dispose();
+        _activeCts = null;
+    }
+
+    private void CancelSynthesis()
+    {
+        _synthesisCts?.Cancel();
+        _synthesisCts?.Dispose();
+        _synthesisCts = null;
+
+        foreach (var completion in _chunkSynthesis)
+            completion.TrySetResult(false);
+    }
+
+    private void StartPlaybackLoop(
+        List<SpeechChunk> chunks,
+        TaskCompletionSource<bool>[] chunkSynthesis,
+        CancellationToken ct = default)
+    {
+        int startIndex;
+        int generation;
+        CancellationToken token;
+        lock (_playbackLock)
+        {
+            _activeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            token = _activeCts.Token;
+            startIndex = _currentIndex;
+            generation = ++_playbackGeneration;
+        }
+        State = PlaybackState.Playing;
+        _ = Task.Run(() => PlaybackLoopAsync(chunks, chunkSynthesis, startIndex, generation, token), token);
+    }
+
+    private void CompletePlayback(List<SpeechChunk> chunks, int generation)
+    {
+        lock (_playbackLock)
+        {
+            if (generation != _playbackGeneration || !ReferenceEquals(chunks, _chunks))
+                return;
+            CancelPlaybackLoopLocked();
+            _currentIndex = -1;
+            _lastText = null;
+            _lastPreviousIndex = -1;
+            _lastPreviousTime = DateTime.MinValue;
+        }
+        _stopAudioDelegate();
+        _ = CleanupCachedAudioFilesAsync(chunks, _synthesisTask);
+        State = PlaybackState.Idle;
+    }
+
+    private static async Task CleanupCachedAudioFilesAsync(IEnumerable<SpeechChunk> chunks, Task synthesisTask)
+    {
+        try
+        {
+            await synthesisTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[Playback] Could not finish audio synthesis before cache cleanup: {ex.Message}");
+        }
+
+        foreach (var chunk in chunks)
+        {
+            if (string.IsNullOrEmpty(chunk.AudioFilePath))
+                continue;
+
+            try
+            {
+                if (File.Exists(chunk.AudioFilePath))
+                    File.Delete(chunk.AudioFilePath);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[Playback] Could not remove cached audio '{chunk.AudioFilePath}': {ex.Message}");
+            }
         }
     }
 
@@ -215,50 +475,95 @@ public class PlaybackController : IPlaybackController
 
     public void Stop()
     {
-        _activeCts?.Cancel();
-        _activeCts?.Dispose();
-        _activeCts = null;
-
+        CancelPlaybackLoop();
         _stopAudioDelegate();
-        _currentIndex = -1;
-        State = PlaybackState.Idle;
-
-        // Clean cache files
-        Task.Run(() =>
-        {
-            try
-            {
-                if (Directory.Exists(_cacheDir))
-                {
-                    foreach (var file in Directory.GetFiles(_cacheDir))
-                    {
-                        try { File.Delete(file); } catch { }
-                    }
-                }
-            }
-            catch { }
-        });
+        if (State != PlaybackState.Idle)
+            State = PlaybackState.Stopped;
     }
 
     public void NextChunk()
     {
-        if (_currentIndex < _chunks.Count - 1)
+        List<SpeechChunk> chunks;
+        TaskCompletionSource<bool>[] chunkSynthesis;
+        int targetIndex;
+        int generation;
+        CancellationToken token;
+        lock (_playbackLock)
         {
-            _currentIndex++;
-            _stopAudioDelegate();
+            if (_currentIndex < 0 || _currentIndex >= _chunks.Count)
+                return;
+
+            targetIndex = _currentIndex + 1;
+            _lastPreviousIndex = -1;
+            _lastPreviousTime = DateTime.MinValue;
+            CancelPlaybackLoopLocked();
+            if (targetIndex < _chunks.Count)
+            {
+                _currentIndex = targetIndex;
+                _activeCts = new CancellationTokenSource();
+                token = _activeCts.Token;
+                chunks = _chunks;
+                chunkSynthesis = _chunkSynthesis;
+                generation = ++_playbackGeneration;
+            }
+            else
+            {
+                _activeCts = null;
+                chunks = _chunks;
+                chunkSynthesis = _chunkSynthesis;
+                generation = -1;
+                token = CancellationToken.None;
+            }
         }
-        else
+
+        _stopAudioDelegate();
+        if (targetIndex >= chunks.Count)
         {
-            Stop();
+            State = PlaybackState.Stopped;
+            return;
         }
+
+        State = PlaybackState.Playing;
+        _ = Task.Run(() => PlaybackLoopAsync(chunks, chunkSynthesis, targetIndex, generation, token), token);
     }
 
     public void PreviousChunk()
     {
-        if (_currentIndex > 0)
+        List<SpeechChunk> chunks;
+        TaskCompletionSource<bool>[] chunkSynthesis;
+        int targetIndex;
+        int generation;
+        CancellationToken token;
+        lock (_playbackLock)
         {
-            _currentIndex--;
-            _stopAudioDelegate();
+            if (_currentIndex < 0 || _currentIndex >= _chunks.Count)
+                return;
+
+            DateTime now = DateTime.UtcNow;
+            if (_lastPreviousIndex >= 0 && now - _lastPreviousTime <= PreviousDoublePressWindow)
+            {
+                targetIndex = Math.Max(0, _lastPreviousIndex - 1);
+                _lastPreviousIndex = -1;
+                _lastPreviousTime = DateTime.MinValue;
+            }
+            else
+            {
+                targetIndex = _currentIndex;
+                _lastPreviousIndex = targetIndex;
+            }
+            _lastPreviousTime = now;
+
+            CancelPlaybackLoopLocked();
+            _currentIndex = targetIndex;
+            _activeCts = new CancellationTokenSource();
+            token = _activeCts.Token;
+            chunks = _chunks;
+            chunkSynthesis = _chunkSynthesis;
+            generation = ++_playbackGeneration;
         }
+
+        _stopAudioDelegate();
+        State = PlaybackState.Playing;
+        _ = Task.Run(() => PlaybackLoopAsync(chunks, chunkSynthesis, targetIndex, generation, token), token);
     }
 }

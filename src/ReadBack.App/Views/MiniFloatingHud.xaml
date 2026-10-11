@@ -175,7 +175,7 @@ SPDX-License-Identifier: Apache-2.0
                 <!-- Previous Chunk -->
                 <Button Style="{StaticResource ModernGlassButtonStyle}"
                         Command="{Binding PrevCommand}"
-                        ToolTip="Previous Paragraph (Ctrl+Alt+Left)"
+                        ToolTip="Restart current paragraph; press twice within 3 seconds to go back (Ctrl+Alt+Left)"
                         Width="30" Height="28">
                     <TextBlock Text="⏮" FontSize="11"/>
                 </Button>
