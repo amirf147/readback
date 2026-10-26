@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -78,13 +78,7 @@ public class SapiTTSClient : ITTSEngine
             synth.Speak(text);
             synth.SetOutputToNull();
 
-            if (wavPath != outputPath && File.Exists(wavPath))
-            {
-                if (File.Exists(outputPath)) File.Delete(outputPath);
-                File.Move(wavPath, outputPath);
-            }
-
-            return Task.FromResult(File.Exists(outputPath) && new FileInfo(outputPath).Length > 0);
+            return Task.FromResult(File.Exists(wavPath) && new FileInfo(wavPath).Length > 0);
         }
         catch
         {

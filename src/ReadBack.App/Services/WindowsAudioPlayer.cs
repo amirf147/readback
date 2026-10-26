@@ -83,7 +83,9 @@ public class WindowsAudioPlayer : IAudioPlayer
             long fileLen = 0;
             try { fileLen = new FileInfo(filePath).Length; }
             catch (Exception ex) { Console.Error.WriteLine($"[Audio] Could not read audio file size: {ex.Message}"); }
-            double estimatedSeconds = Math.Max(2.0, (fileLen / 6000.0) + 1.5);
+            bool isWav = filePath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase);
+            double bytesPerSec = isWav ? 44000.0 : 6000.0;
+            double estimatedSeconds = Math.Max(3.0, (fileLen / bytesPerSec) + 2.5);
             StartWatchdog(operation, TimeSpan.FromSeconds(estimatedSeconds));
 
             try

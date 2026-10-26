@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -107,6 +107,9 @@ public class CompositeTTSEngine : ITTSEngine
         }
 
         // 4. Transparent offline fallback to local Windows voices
-        return await _sapiClient.SynthesizeToFileAsync(text, outputPath, "", rate, ct);
+        string wavPath = outputPath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)
+            ? outputPath
+            : Path.ChangeExtension(outputPath, ".wav");
+        return await _sapiClient.SynthesizeToFileAsync(text, wavPath, "", rate, ct);
     }
 }

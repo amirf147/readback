@@ -253,43 +253,43 @@ public class WindowsHotkeyService : IHotkeyService
     private void TriggerSpeak()
     {
         if (!TryBeginTrigger(HOTKEY_ID_SPEAK)) return;
-        SpeakRequested?.Invoke();
+        Task.Run(() => SpeakRequested?.Invoke());
     }
 
     private void TriggerStop()
     {
         if (!TryBeginTrigger(HOTKEY_ID_STOP)) return;
-        StopRequested?.Invoke();
+        Task.Run(() => StopRequested?.Invoke());
     }
 
     private void TriggerPause()
     {
         if (!TryBeginTrigger(HOTKEY_ID_PAUSE)) return;
-        PauseRequested?.Invoke();
+        Task.Run(() => PauseRequested?.Invoke());
     }
 
     private void TriggerNext()
     {
         if (!TryBeginTrigger(HOTKEY_ID_NEXT)) return;
-        NextRequested?.Invoke();
+        Task.Run(() => NextRequested?.Invoke());
     }
 
     private void TriggerPrev()
     {
         if (!TryBeginTrigger(HOTKEY_ID_PREV)) return;
-        PrevRequested?.Invoke();
+        Task.Run(() => PrevRequested?.Invoke());
     }
 
     private void TriggerHud()
     {
         if (!TryBeginTrigger(HOTKEY_ID_HUD)) return;
-        HudRequested?.Invoke();
+        Task.Run(() => HudRequested?.Invoke());
     }
 
     private void TriggerEscape()
     {
         if (!TryBeginTrigger(VK_ESCAPE)) return;
-        EscapeRequested?.Invoke();
+        Task.Run(() => EscapeRequested?.Invoke());
     }
 
     private bool TryBeginTrigger(int id)

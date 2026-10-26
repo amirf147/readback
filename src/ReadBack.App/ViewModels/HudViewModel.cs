@@ -86,10 +86,21 @@ public class HudViewModel : INotifyPropertyChanged
         _settings = settings;
         _themeManager = themeManager;
 
+        DateTime lastNavTime = DateTime.MinValue;
         PlayPauseCommand = new RelayCommand(() => _playback.TogglePause());
         StopCommand = new RelayCommand(() => _playback.Stop());
-        NextCommand = new RelayCommand(() => _playback.NextChunk());
-        PrevCommand = new RelayCommand(() => _playback.PreviousChunk());
+        NextCommand = new RelayCommand(() =>
+        {
+            if ((DateTime.UtcNow - lastNavTime).TotalMilliseconds < 250) return;
+            lastNavTime = DateTime.UtcNow;
+            _playback.NextChunk();
+        });
+        PrevCommand = new RelayCommand(() =>
+        {
+            if ((DateTime.UtcNow - lastNavTime).TotalMilliseconds < 250) return;
+            lastNavTime = DateTime.UtcNow;
+            _playback.PreviousChunk();
+        });
         CloseCommand = new RelayCommand(() =>
         {
             _playback.Stop();

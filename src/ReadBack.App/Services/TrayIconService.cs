@@ -164,7 +164,7 @@ public class TrayIconService : IDisposable
         {
             if (_settingsService.CurrentSettings.SoundFeedback)
             {
-                try { Console.Beep(500, 70); } catch { }
+                Task.Run(() => { try { Console.Beep(500, 70); } catch { } });
             }
             _playback.Stop();
             return;
@@ -172,7 +172,7 @@ public class TrayIconService : IDisposable
 
         if (_settingsService.CurrentSettings.SoundFeedback)
         {
-            try { Console.Beep(900, 60); } catch { }
+            Task.Run(() => { try { Console.Beep(900, 60); } catch { } });
         }
 
         string? text = _clipboardService.GetText();
@@ -184,7 +184,7 @@ public class TrayIconService : IDisposable
         {
             if (_settingsService.CurrentSettings.SoundFeedback)
             {
-                try { Console.Beep(400, 80); } catch { }
+                Task.Run(() => { try { Console.Beep(400, 80); } catch { } });
             }
             _notifyIcon.ShowBalloonTip(
                 3500,

@@ -223,13 +223,23 @@ public class PlaybackController : IPlaybackController
                     continue;
                 }
 
-                string filePath = Path.Combine(_cacheDir, $"chunk_{i}_{Guid.NewGuid():N}.mp3");
+                bool isSapiVoice = voice.StartsWith("sapi:", StringComparison.OrdinalIgnoreCase) ||
+                                   voice.StartsWith("Windows:", StringComparison.OrdinalIgnoreCase) ||
+                                   _settingsService.CurrentSettings.OfflineOnly;
+                string ext = isSapiVoice ? ".wav" : ".mp3";
+                string filePath = Path.Combine(_cacheDir, $"chunk_{i}_{Guid.NewGuid():N}{ext}");
                 try
                 {
                     bool success = await _ttsEngine.SynthesizeToFileAsync(chunk.Text, filePath, voice, speed, ct);
-                    if (success && File.Exists(filePath))
+                    string wavFallback = Path.ChangeExtension(filePath, ".wav");
+                    if (success && File.Exists(filePath) && new FileInfo(filePath).Length > 0)
                     {
                         chunk.AudioFilePath = filePath;
+                        chunkSynthesis[i].TrySetResult(true);
+                    }
+                    else if (success && File.Exists(wavFallback) && new FileInfo(wavFallback).Length > 0)
+                    {
+                        chunk.AudioFilePath = wavFallback;
                         chunkSynthesis[i].TrySetResult(true);
                     }
                     else

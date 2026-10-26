@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,5 +48,12 @@ public class EdgeTTSTests
         {
             if (File.Exists(tempFile)) File.Delete(tempFile);
         }
+    }
+
+    [Fact]
+    public void EdgeTTSDrm_GeneratesExpectedToken_OracleTest()
+    {
+        string token = EdgeTTSDrm.GenerateSecMsGec(1700000000.0);
+        Assert.Equal("2CD23A2CA0B2595A-F3C846C370E05F9CC83ACC5F995C5F5D87A4D0F14CE8936A0F902E64099E38A2", token);
     }
 }

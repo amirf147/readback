@@ -1,4 +1,4 @@
-﻿// Copyright 2026 Amir Farhadi
+// Copyright 2026 Amir Farhadi
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ public class EdgeTTSClient : ITTSEngine
     public string Name => "Microsoft Edge Neural TTS";
 
     private const string TrustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-    private const string SecMsGecVersion = "1-143.0.3650.75";
+    private const string SecMsGecVersion = EdgeTTSDrm.SecMsGecVersion;
     private const string Origin = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
     private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
     private const string VoiceListUrl = $"https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken={TrustedClientToken}";
@@ -91,19 +91,7 @@ public class EdgeTTSClient : ITTSEngine
         return PopularVoices;
     }
 
-    private static string GenerateSecMsGec()
-    {
-        // Switch to Windows file time epoch (1601-01-01 00:00:00 UTC) = 11644473600 seconds
-        double unixSec = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
-        double ticks = unixSec + 11644473600.0;
-        // Round down to the nearest 5 minutes (300 seconds)
-        ticks -= ticks % 300;
-        // Convert to 100-nanosecond intervals
-        ticks *= 10000000.0;
-        string strToHash = $"{ticks:0}{TrustedClientToken}";
-        byte[] hash = System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(strToHash));
-        return Convert.ToHexString(hash);
-    }
+        private static string GenerateSecMsGec() => EdgeTTSDrm.GenerateSecMsGec();
 
     public async Task<bool> SynthesizeToFileAsync(string text, string outputPath, string voiceId, string rate, CancellationToken ct = default)
     {
