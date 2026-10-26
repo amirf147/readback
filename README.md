@@ -4,7 +4,7 @@
   <img src="assets/readback-overview.jpg" alt="ReadBack Overview & Architecture" width="100%" />
 </p>
 
-> **Instant Screen & Document Text-to-Speech for Windows**  
+> **Instant Screen & Document Text-to-Speech for Windows**
 > Built with modern **C# & .NET 10**, Microsoft Edge Neural Voices, offline Windows SAPI fallback, and a sleek **Win+H style floating HUD**.
 
 ---

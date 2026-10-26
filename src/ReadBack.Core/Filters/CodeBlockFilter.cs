@@ -28,13 +28,13 @@ public class CodeBlockFilter : INarrationFilter
     public bool IsEnabled { get; set; } = true;
 
     private static readonly Regex FencedCodeRegex = new(
-        @"```([a-zA-Z0-9_\-\.\+#]*)\s*[
+        @"```([a-zA-Z0-9_\-\.\+#]*)\s*[
 ]+([\s\S]*?)```",
         RegexOptions.Compiled
     );
 
     private static readonly Regex InlineCodeRegex = new(
-        @"`([^`
+        @"`([^`
 ]+)`",
         RegexOptions.Compiled
     );

@@ -73,7 +73,7 @@ If your internet connection drops or Microsoft Edge endpoints are temporarily un
 
 Windows includes a large library of high-quality offline voices that you can install completely free:
 
-1. Right-click the ReadBack tray icon, open **🖥️ SAPI Voice Selection**, and click **📥 Download More Windows Voices (Settings)...**  
+1. Right-click the ReadBack tray icon, open **🖥️ SAPI Voice Selection**, and click **📥 Download More Windows Voices (Settings)...**
    *(Alternatively, press `Win + I` → **Time & language** → **Speech**)*.
 2. In the Windows Settings window, scroll to **Manage voices**.
 3. Click **Add voices**.
